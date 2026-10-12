@@ -29,6 +29,11 @@ non-commercial project, not affiliated with, sponsored by or endorsed by Radical
   The Apache Software Foundation).
 * **Bouncy Castle** (`org.bouncycastle:bcprov-jdk18on`, https://www.bouncycastle.org): the Bouncy
   Castle License (MIT-style), © The Legion of the Bouncy Castle Inc.
+* **zstd-jni** (`com.github.luben:zstd-jni`, https://github.com/luben/zstd-jni): BSD 2-Clause License,
+  © Luben Karavelov. It contains **Zstandard** (BSD License, © Meta Platforms, Inc.). Unpacks the game
+  files Steam sends.
+* **XZ for Java** (`org.tukaani:xz`, https://tukaani.org/xz/java.html): BSD Zero Clause License, by
+  Lasse Collin and contributors. Unpacks the game files Steam sends.
 * **ZXing** (`com.google.zxing:core`, https://github.com/zxing/zxing): Apache License 2.0, © ZXing
   authors. Draws the sign-in QR code.
 * **AndroidX** (AppCompat, Core) and **Material Components for Android**: Apache License 2.0, © The

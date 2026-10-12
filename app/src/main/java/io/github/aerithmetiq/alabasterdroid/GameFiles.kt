@@ -1,6 +1,7 @@
 package io.github.aerithmetiq.alabasterdroid
 
 import android.content.Context
+import io.github.aerithmetiq.alabasterdroid.steam.GameDownload
 import java.io.File
 
 /**
@@ -13,8 +14,12 @@ object GameFiles {
     fun root(context: Context): File =
         File(context.getExternalFilesDir(null) ?: context.filesDir, "AlabasterDawn")
 
-    /** The engine's entry page: present means the game is installed. */
-    fun installed(context: Context): Boolean = File(root(context), "terra/index.html").isFile
+    /**
+     * Installed means a download ran to the end (it leaves [GameDownload.MARKER]) and the engine's entry
+     * page is there. A download that was interrupted is not installed; PLAY carries it on.
+     */
+    fun installed(context: Context): Boolean =
+        File(root(context), GameDownload.MARKER).isFile && File(root(context), GameDownload.ENTRY).isFile
 
     /** The game's own title art, used behind the launcher once the game is downloaded. Never bundled. */
     fun titleArt(context: Context): File? =

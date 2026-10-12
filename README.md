@@ -14,11 +14,11 @@ Alabaster Droid is being built in milestones.
 | Milestone | What it adds | State |
 |---|---|---|
 | 1 | Launcher, Steam sign-in (password + Steam Guard, or QR code), profile, Steam diagnostics | **this build** |
-| 2 | Download Alabaster Dawn from Steam on first PLAY | next |
+| 2 | Download Alabaster Dawn from Steam on first PLAY | written, being tested |
 | 3 | Run the game: the WebView host, shim and the shader fixes mobile GPUs need | planned |
 | 4 | Steam Cloud saves: pull on PLAY, upload on quit, conflict handling, offline play | planned |
 
-Until milestones 2 and 3 land, **PLAY** only says what is coming.
+The main button reads **DOWNLOAD** until the game is on the device, then **PLAY**. Until milestone 3 lands, PLAY cannot run the game yet.
 
 ## What it does today
 

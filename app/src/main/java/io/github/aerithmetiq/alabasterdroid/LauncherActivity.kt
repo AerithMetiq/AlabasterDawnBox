@@ -30,8 +30,11 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.imageview.ShapeableImageView
 import com.google.android.material.textfield.TextInputEditText
 import `in`.dragonbra.javasteam.steam.authentication.IAuthenticator
+import io.github.aerithmetiq.alabasterdroid.steam.GameDownload
+import io.github.aerithmetiq.alabasterdroid.steam.GameDownloader
 import io.github.aerithmetiq.alabasterdroid.steam.LoginRejectedException
 import io.github.aerithmetiq.alabasterdroid.steam.LoginStore
+import io.github.aerithmetiq.alabasterdroid.steam.SteamGame
 import io.github.aerithmetiq.alabasterdroid.steam.SteamLogin
 import io.github.aerithmetiq.alabasterdroid.steam.SteamProbe
 import io.github.aerithmetiq.alabasterdroid.steam.SteamSession
@@ -66,6 +69,7 @@ class LauncherActivity : AppCompatActivity() {
     private lateinit var offline: CheckBox
     private lateinit var busy: ProgressBar
     private lateinit var status: TextView
+    private lateinit var downloadBar: ProgressBar
     private lateinit var avatar: ShapeableImageView
     private lateinit var gameArt: ImageView
 
@@ -73,6 +77,14 @@ class LauncherActivity : AppCompatActivity() {
     @Volatile private var session: SteamSession? = null
     @Volatile private var leaving = false
     @Volatile private var refreshing = false
+
+    /** The game download in progress, with its own session, so PLAY, signing out or leaving can stop it. */
+    @Volatile private var download: GameDownloader? = null
+    @Volatile private var downloadSession: SteamSession? = null
+    @Volatile private var downloading = false
+    @Volatile private var downloadCancelled = false
+    /** Shown on the button while file data is moving; null before that. UI thread only. */
+    private var downloadPercent: Int? = null
 
     private val prefs get() = getSharedPreferences("launcher", MODE_PRIVATE)
     private val avatarFile get() = File(filesDir, "avatar.jpg")
@@ -95,12 +107,13 @@ class LauncherActivity : AppCompatActivity() {
         offline = findViewById(R.id.offline)
         busy = findViewById(R.id.busy)
         status = findViewById(R.id.status)
+        downloadBar = findViewById(R.id.download_bar)
         avatar = findViewById(R.id.avatar)
         gameArt = findViewById(R.id.game_art)
 
         signIn.setOnClickListener { signInWithPassword() }
         signInQr.setOnClickListener { signInWithQr() }
-        play.setOnClickListener { play() }
+        play.setOnClickListener { onPlay() }
         offline.setOnCheckedChangeListener { _, checked ->
             prefs.edit().putBoolean(KEY_OFFLINE, checked).apply()
             updatePlay()
@@ -124,6 +137,7 @@ class LauncherActivity : AppCompatActivity() {
     override fun onDestroy() {
         leaving = true
         cancelSession()
+        cancelDownload()
         super.onDestroy()
     }
 
@@ -173,9 +187,15 @@ class LauncherActivity : AppCompatActivity() {
     private fun updatePlay() {
         if (!::play.isInitialized) return
         val playOffline = prefs.getBoolean(KEY_OFFLINE, false)
-        play.text = if (playOffline) "▶  PLAY OFFLINE" else "▶  PLAY"
+        play.text = when {
+            downloading -> downloadPercent?.let { "✕  CANCEL · $it%" } ?: "✕  CANCEL"
+            !GameFiles.installed(this) -> "↓  DOWNLOAD"
+            playOffline -> "▶  PLAY OFFLINE"
+            else -> "▶  PLAY"
+        }
         playCaption.text = when {
-            !GameFiles.installed(this) -> "Downloads Alabaster Dawn from Steam the first time (your own copy)"
+            downloading -> "Downloading Alabaster Dawn · keep Alabaster Droid open until it finishes"
+            !GameFiles.installed(this) -> "Downloads your own copy of Alabaster Dawn from Steam"
             playOffline -> "Plays your local save · syncs next time you play online"
             else -> "Pulls your latest save · uploads to Steam Cloud on quit"
         }
@@ -442,16 +462,98 @@ class LauncherActivity : AppCompatActivity() {
 
     /* -------------------------------------------------------------- PLAY etc. ---- */
 
-    private fun play() {
-        if (!GameFiles.installed(this)) {
-            setStatus("Downloading Alabaster Dawn from Steam comes in the next build (milestone 2).")
-            return
+    private fun onPlay() {
+        when {
+            downloading -> {
+                setStatus("Stopping the download…")
+                cancelDownload()
+            }
+            GameFiles.installed(this) -> setStatus("Alabaster Dawn is downloaded. Running the game comes in milestone 3.")
+            prefs.getBoolean(KEY_OFFLINE, false) ->
+                setStatus("Alabaster Dawn isn't downloaded yet. Untick Play offline, then press DOWNLOAD.")
+            else -> startDownload()
         }
-        setStatus("Running the game comes in milestone 3.")
+    }
+
+    /**
+     * Downloads the game's `terra/` from Steam with the saved login, on a worker with a session of its
+     * own. Whatever is already on disk and intact is kept, so pressing PLAY again carries on a download
+     * that was cancelled or failed.
+     */
+    private fun startDownload() {
+        val login = store.load() ?: return
+        downloading = true
+        downloadCancelled = false
+        downloadPercent = null
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        downloadBar.isIndeterminate = true
+        downloadBar.visibility = View.VISIBLE
+        setStatus("Connecting to Steam…")
+        updatePlay()
+        Thread({
+            val s = SteamSession()
+            var end = "Alabaster Dawn is downloaded."
+            try {
+                /* The start-up profile refresh logs on with the same login; let it finish first. */
+                while (refreshing && !downloadCancelled) Thread.sleep(100)
+                downloadSession = s
+                if (downloadCancelled) throw CancellationException()
+                s.connect()
+                s.logOn(login)
+                val d = GameDownloader(s, SteamGame.ALABASTER_DAWN.appId, GameFiles.root(this))
+                download = d
+                if (downloadCancelled) throw CancellationException()
+                d.run(
+                    status = { text -> ui { setStatus(text) } },
+                    bytes = { done, total ->
+                        ui {
+                            val percent = GameDownload.percent(done, total)
+                            downloadBar.isIndeterminate = false
+                            downloadBar.progress = percent
+                            setStatus(GameDownload.progressLine(done, total))
+                            if (downloading && percent != downloadPercent) {
+                                downloadPercent = percent
+                                updatePlay()
+                            }
+                        }
+                    },
+                )
+            } catch (e: LoginRejectedException) {
+                store.clearLogin()
+                end = "Your Steam login has expired. Sign in again."
+            } catch (e: Throwable) {
+                end = if (downloadCancelled) {
+                    "Download stopped. Press DOWNLOAD to carry on."
+                } else {
+                    Log.w(TAG, "game download failed", e)
+                    "Download failed: ${SteamProbe.describe(e)}. Press DOWNLOAD to try again."
+                }
+            } finally {
+                s.close()
+                download = null
+                downloadSession = null
+                downloading = false
+            }
+            ui {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                downloadBar.visibility = View.GONE
+                /* Signing out stops the download too; "Signed out." is then the last word. */
+                if (store.load() != null || !downloadCancelled) setStatus(end)
+                render()
+                loadGameArt()
+            }
+        }, "game-download").start()
+    }
+
+    private fun cancelDownload() {
+        downloadCancelled = true
+        download?.cancel()
+        cancelSession(downloadSession)
     }
 
     private fun signOut() {
         cancelSession()
+        cancelDownload()
         store.clearLogin()
         avatarFile.delete()
         password.setText("")

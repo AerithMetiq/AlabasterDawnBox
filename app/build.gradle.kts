@@ -67,5 +67,11 @@ dependencies {
     implementation("org.bouncycastle:bcprov-jdk18on:1.83")
     implementation("com.google.zxing:core:3.5.3")
 
+    /* The game download calls JavaSteam's coroutine API, and JavaSteam leaves the two decompressors its
+     * depot chunks need (zstd, LZMA) for the app to supply. Versions are the ones JavaSteam 1.8.0 uses. */
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("com.github.luben:zstd-jni:1.5.7-6@aar")
+    implementation("org.tukaani:xz:1.11")
+
     testImplementation("junit:junit:4.13.2")
 }
