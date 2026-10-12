@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark launcher palette: near-black with a cool glow at the top, so the accent reads as lit. -->
+    <color name="launcher_bg_top">#1F2547</color>
+    <color name="launcher_bg_mid">#0D1117</color>
+    <color name="launcher_bg_bottom">#090C10</color>
+    <color name="scrim">#A6060A10</color>
+
+    <color name="text_primary">#E6EDF3</color>
+    <color name="text_secondary">#8B949E</color>
+    <!-- The wordmark: the game's namesake stone. -->
+    <color name="alabaster">#F4EDE4</color>
+
+    <!-- The one accent: dawn gold. Swap it for #40C4FF to use CrossDroid's cyan instead. -->
+    <color name="accent">#FFB547</color>
+    <color name="on_accent">#1A1206</color>
+
+    <color name="ic_launcher_background">#1F2547</color>
+</resources>

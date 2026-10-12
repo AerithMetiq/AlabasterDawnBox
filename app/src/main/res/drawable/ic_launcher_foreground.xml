@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Original mark: a sun rising over a pale horizon. Kept inside the adaptive icon's 66dp safe circle
+     (centre 54,54). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- rays -->
+    <path
+        android:strokeColor="#FFB547"
+        android:strokeLineCap="round"
+        android:strokeWidth="3"
+        android:pathData="M54,33 L54,38 M39.5,39.5 L43,43 M68.5,39.5 L65,43 M33,54 L38,54 M75,54 L70,54" />
+
+    <!-- the sun, half risen -->
+    <path
+        android:fillColor="#FFB547"
+        android:pathData="M40,58 A14,14 0,0 1 68,58 Z" />
+
+    <!-- horizon -->
+    <path
+        android:fillColor="#F4EDE4"
+        android:pathData="M30,60 L78,60 Q79.5,60 79.5,61.5 Q79.5,63 78,63 L30,63 Q28.5,63 28.5,61.5 Q28.5,60 30,60 Z" />
+
+    <!-- its reflection -->
+    <path
+        android:fillColor="#99F4EDE4"
+        android:pathData="M42,68 L66,68 Q67.25,68 67.25,69.25 Q67.25,70.5 66,70.5 L42,70.5 Q40.75,70.5 40.75,69.25 Q40.75,68 42,68 Z" />
+    <path
+        android:fillColor="#55F4EDE4"
+        android:pathData="M48,74 L60,74 Q61,74 61,75 Q61,76 60,76 L48,76 Q47,76 47,75 Q47,74 48,74 Z" />
+</vector>
