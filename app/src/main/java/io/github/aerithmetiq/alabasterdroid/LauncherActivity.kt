@@ -1,6 +1,7 @@
 package io.github.aerithmetiq.alabasterdroid
 
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
@@ -14,6 +15,7 @@ import android.text.style.StyleSpan
 import android.util.Log
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.CheckBox
@@ -26,10 +28,15 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updateLayoutParams
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.imageview.ShapeableImageView
 import com.google.android.material.textfield.TextInputEditText
 import `in`.dragonbra.javasteam.steam.authentication.IAuthenticator
+import io.github.aerithmetiq.alabasterdroid.host.GameActivity
 import io.github.aerithmetiq.alabasterdroid.steam.GameDownload
 import io.github.aerithmetiq.alabasterdroid.steam.GameDownloader
 import io.github.aerithmetiq.alabasterdroid.steam.LoginRejectedException
@@ -72,6 +79,9 @@ class LauncherActivity : AppCompatActivity() {
     private lateinit var downloadBar: ProgressBar
     private lateinit var avatar: ShapeableImageView
     private lateinit var gameArt: ImageView
+    private lateinit var gameTitle: ImageView
+    private lateinit var wordmark: TextView
+    private lateinit var wordmarkDroid: TextView
 
     /** The session a sign-in or refresh is using, so leaving the screen can cancel it. */
     @Volatile private var session: SteamSession? = null
@@ -92,6 +102,10 @@ class LauncherActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        /* Edge to edge, with see-through system bars, so the background runs under the status bar. */
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
         setContentView(R.layout.activity_launcher)
         store = LoginStore(this)
 
@@ -110,6 +124,21 @@ class LauncherActivity : AppCompatActivity() {
         downloadBar = findViewById(R.id.download_bar)
         avatar = findViewById(R.id.avatar)
         gameArt = findViewById(R.id.game_art)
+
+        /* The avatar floats in the corner, outside the controls' layout, so it is moved clear of the
+         * status bar here; the insets are passed on untouched for that layout to use. */
+        val d = resources.displayMetrics.density
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(android.R.id.content)) { _, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            avatar.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                topMargin = bars.top + (14 * d).toInt()
+                marginEnd = bars.right + (18 * d).toInt()
+            }
+            insets
+        }
+        gameTitle = findViewById(R.id.game_title)
+        wordmark = findViewById(R.id.wordmark)
+        wordmarkDroid = findViewById(R.id.wordmark_droid)
 
         signIn.setOnClickListener { signInWithPassword() }
         signInQr.setOnClickListener { signInWithQr() }
@@ -196,8 +225,7 @@ class LauncherActivity : AppCompatActivity() {
         playCaption.text = when {
             downloading -> "Downloading Alabaster Dawn · keep Alabaster Droid open until it finishes"
             !GameFiles.installed(this) -> "Downloads your own copy of Alabaster Dawn from Steam"
-            playOffline -> "Plays your local save · syncs next time you play online"
-            else -> "Pulls your latest save · uploads to Steam Cloud on quit"
+            else -> "Saves stay on this device for now · Steam Cloud sync is not built yet"
         }
     }
 
@@ -452,12 +480,31 @@ class LauncherActivity : AppCompatActivity() {
         bitmap?.let { avatar.setImageBitmap(it) }
     }
 
-    /** The game's own title art behind the launcher, once the game is downloaded. */
+    /**
+     * The game's own title-screen art, once the game is downloaded: its backdrop behind the launcher,
+     * and its name in place of the "ALABASTER / DROID" wordmark. Each part falls back to the
+     * launcher's own look when its file is not there.
+     */
     private fun loadGameArt() {
-        val file = GameFiles.titleArt(this)
-        val bitmap = file?.let { BitmapFactory.decodeFile(it.path) }
-        gameArt.visibility = if (bitmap != null) View.VISIBLE else View.GONE
-        bitmap?.let { gameArt.setImageBitmap(it) }
+        fun show(view: ImageView, file: File?): Boolean {
+            val bitmap = file?.let { decodeArt(it) }
+            view.visibility = if (bitmap != null) View.VISIBLE else View.GONE
+            bitmap?.let { view.setImageBitmap(it) }
+            return bitmap != null
+        }
+        show(gameArt, GameFiles.titleBackground(this))
+        val named = show(gameTitle, GameFiles.titleName(this))
+        wordmark.visibility = if (named) View.GONE else View.VISIBLE
+        wordmarkDroid.visibility = wordmark.visibility
+    }
+
+    /** Decodes a picture no larger than the launcher can use, so big art does not waste memory. */
+    private fun decodeArt(file: File): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.path, bounds)
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2048) sample *= 2
+        return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
     }
 
     /* -------------------------------------------------------------- PLAY etc. ---- */
@@ -468,7 +515,10 @@ class LauncherActivity : AppCompatActivity() {
                 setStatus("Stopping the download…")
                 cancelDownload()
             }
-            GameFiles.installed(this) -> setStatus("Alabaster Dawn is downloaded. Running the game comes in milestone 3.")
+            GameFiles.installed(this) -> {
+                setStatus("")
+                startActivity(Intent(this, GameActivity::class.java))
+            }
             prefs.getBoolean(KEY_OFFLINE, false) ->
                 setStatus("Alabaster Dawn isn't downloaded yet. Untick Play offline, then press DOWNLOAD.")
             else -> startDownload()

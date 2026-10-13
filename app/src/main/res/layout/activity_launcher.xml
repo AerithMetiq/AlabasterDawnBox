@@ -6,10 +6,10 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/launcher_bg"
-    android:fitsSystemWindows="true">
-    <!-- fitsSystemWindows: Android 15+ draws apps edge to edge, so the controls are kept clear of the
-         status and navigation bars while the background still fills the whole screen. -->
+    android:background="@drawable/launcher_bg">
+    <!-- The launcher draws edge to edge on every Android version (see LauncherActivity): the background,
+         the game's art and the scrim fill the whole screen, under transparent system bars, and only
+         the controls' layout below is kept clear of the bars (fitsSystemWindows). -->
 
     <ImageView
         android:id="@+id/game_art"
@@ -28,6 +28,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:fitsSystemWindows="true"
         android:orientation="vertical">
 
         <LinearLayout
@@ -41,7 +42,8 @@
             android:paddingTop="20dp"
             android:paddingBottom="8dp">
 
-            <!-- left: the wordmark (no game logo ships in the APK) -->
+            <!-- left: the wordmark. No game art ships in the APK: once the game is downloaded, its own
+                 title image is read from the user's copy and shown here instead (see GameFiles). -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -49,7 +51,18 @@
                 android:gravity="center"
                 android:orientation="vertical">
 
+                <ImageView
+                    android:id="@+id/game_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:adjustViewBounds="true"
+                    android:contentDescription="Alabaster Dawn"
+                    android:maxHeight="72dp"
+                    android:scaleType="fitCenter"
+                    android:visibility="gone" />
+
                 <TextView
+                    android:id="@+id/wordmark"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:fontFamily="serif"
@@ -62,6 +75,7 @@
                     android:textSize="38sp" />
 
                 <TextView
+                    android:id="@+id/wordmark_droid"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:fontFamily="serif"

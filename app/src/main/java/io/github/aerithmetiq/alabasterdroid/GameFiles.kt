@@ -21,7 +21,18 @@ object GameFiles {
     fun installed(context: Context): Boolean =
         File(root(context), GameDownload.MARKER).isFile && File(root(context), GameDownload.ENTRY).isFile
 
-    /** The game's own title art, used behind the launcher once the game is downloaded. Never bundled. */
-    fun titleArt(context: Context): File? =
-        File(root(context), "terra/media/gui/title/title-bg-01.png").takeIf { it.isFile }
+    /*
+     * The game's own title-screen art, drawn on the launcher once the game is downloaded. It is read
+     * from the user's copy at runtime and never bundled; a build of the game that moves a file simply
+     * gets the launcher's own look for that part.
+     */
+
+    /** The backdrop, behind the whole launcher. */
+    fun titleBackground(context: Context): File? = titleFile(context, "title-color-01.png")
+
+    /** The game's name as the title screen draws it, shown in place of the "ALABASTER / DROID" wordmark. */
+    fun titleName(context: Context): File? = titleFile(context, "title-name-01.png")
+
+    private fun titleFile(context: Context, name: String): File? =
+        File(root(context), "terra/media/gui/title/$name").takeIf { it.isFile }
 }
