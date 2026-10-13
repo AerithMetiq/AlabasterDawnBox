@@ -63,8 +63,10 @@ percentage is in the status line and the bar below, not on the button); once ins
 
 **Added after milestone 4 (2026-10-12; unit-tested).** Run on the Nova the same day: verify game
 files, PLAY with sync, the sync status line, the launcher's Resolution setting reaching the shim, the
-restore list, and the launcher's Game settings. Not yet run: an actual update (needs a new build on
-Steam), a real restore, delete game files, a download left in the background, the playing status.
+restore list, and the launcher's Game settings. AerithMetiq also confirmed the
+background download (screen off included), the playing status and a real restore (20:22: the 8 files
+went back, the replaced ones were backed up, and the next sync uploaded them). Not yet run: an actual
+update (needs a new build on Steam) and delete game files.
 
 - **Background download** (`GameDownloadService`, a `dataSync` foreground service with a progress
   notification and a Cancel action; wake and Wi-Fi locks). The launcher only mirrors
