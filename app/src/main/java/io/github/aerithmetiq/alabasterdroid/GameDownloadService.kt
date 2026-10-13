@@ -190,7 +190,10 @@ class GameDownloadService : Service() {
             )
         }
         val immutable = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        val open = PendingIntent.getActivity(this, 0, Intent(this, LauncherActivity::class.java), immutable)
+        /* The same intent the app icon sends: it brings the app forward as it is, without putting a
+         * second launcher on top of the one that is there (Back then seemed to do nothing once). */
+        val launch = packageManager.getLaunchIntentForPackage(packageName) ?: Intent(this, LauncherActivity::class.java)
+        val open = PendingIntent.getActivity(this, 0, launch, immutable)
         val builder = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_download)
             .setContentTitle("Alabaster Droid")

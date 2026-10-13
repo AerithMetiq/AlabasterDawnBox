@@ -72,6 +72,9 @@ update (needs a new build on Steam) and delete game files.
   notification and a Cancel action; wake and Wi-Fi locks). The launcher only mirrors
   `GameDownloadState`. One run downloads, resumes, updates or verifies: the downloader hashes every
   file against the manifest. Settings → "Verify game files" starts the same run.
+  Without the notification permission (Android 13+; it was declined on the Nova) the download
+  still runs but shows nothing outside the app; the launcher's caption says so. The notification
+  opens the app with the package's launch intent, so it does not stack a second launcher.
 - **Game updates**: the launcher's start-up logon also reads the public build id
   (`steamPublicBuild`, read-only) into `GameFiles.steamBuild`; when it differs from the marker's
   `build=`, the button reads UPDATE and asks "Update now / Play this version". An update removes

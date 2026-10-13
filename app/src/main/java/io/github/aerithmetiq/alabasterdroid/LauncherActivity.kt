@@ -30,6 +30,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.updateLayoutParams
 import com.google.android.material.button.MaterialButton
@@ -241,7 +242,9 @@ class LauncherActivity : AppCompatActivity() {
             else -> "▶  PLAY"
         }
         playCaption.text = when {
-            downloading -> "Downloading Alabaster Dawn · it carries on if you leave this screen"
+            downloading -> "Downloading Alabaster Dawn · it carries on if you leave this screen" +
+                if (NotificationManagerCompat.from(this).areNotificationsEnabled()) ""
+                else "\nNotifications are off for Alabaster Droid, so there is no progress notification"
             !GameFiles.installed(this) -> "Downloads your own copy of Alabaster Dawn from Steam"
             playOffline -> "Plays the saves on this device · no Steam Cloud sync"
             GameFiles.updateAvailable(this) -> "A new build of Alabaster Dawn is on Steam"
