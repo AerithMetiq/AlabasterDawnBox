@@ -13,13 +13,12 @@ Alabaster Droid is being built in milestones.
 
 | Milestone | What it adds | State |
 |---|---|---|
-| 1 | Launcher, Steam sign-in (password + Steam Guard, or QR code), profile, Steam diagnostics | **this build** |
+| 1 | Launcher, Steam sign-in (password + Steam Guard, or QR code), profile, Steam diagnostics | done |
 | 2 | Download Alabaster Dawn from Steam on first PLAY | done |
 | 3 | Run the game: the WebView host, shim and the shader fixes mobile GPUs need | done |
-| 4 | Steam Cloud saves: pull on PLAY, upload on quit, conflict handling, offline play | planned |
+| 4 | Steam Cloud saves: pull on PLAY, upload on quit, conflict handling, offline play | downloads confirmed on a device; uploads not yet |
 
-The main button reads **DOWNLOAD** until the game is on the device, then **PLAY**. Saves stay on the
-device until milestone 4; Steam Cloud saves are not pulled yet.
+The main button reads **DOWNLOAD** until the game is on the device, then **PLAY**.
 
 ## What it does today
 
@@ -29,6 +28,11 @@ device until milestone 4; Steam Cloud saves are not pulled yet.
   Steam returns is encrypted with a key kept in the Android Keystore.
 - **Profile**: your Steam persona name and avatar on the launcher.
 - **Controller-first**: every control is reachable with a D-pad, with a clear focus ring.
+- **Steam Cloud saves**: PLAY first downloads the saves that are newer in Steam Cloud. Uploading this
+  device's saves when you leave the game is **off until you turn it on** (Settings → Steam Cloud saves),
+  where a check lists what a sync would do with each file without doing it. When both sides changed
+  you are asked which to keep; local saves that get replaced are copied to a backup folder first, and
+  nothing is ever deleted from Steam Cloud. "Play offline" skips all of it.
 - **Steam diagnostics** (Settings): a read-only report of Alabaster Dawn's depots, Steam Cloud rules and
   your Cloud files, with Share. It changes nothing on Steam.
 
@@ -47,7 +51,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - **Written by Claude** (Anthropic's AI model, Claude Opus 5.5). **Reviewed and tested by
   AerithMetiq.** Commits name Claude as the author.
 - [CrossDroid](https://github.com/dain98/CrossDroid) by dain98: the launcher design this follows, for
-  CrossCode. No code was taken from it (it has no license); see `NOTICE.md`.
+  CrossCode. No code was taken from it; see `NOTICE.md`.
 - [RadicalFish Ports / alabaster-android](https://github.com/moronigranja/alabaster-android) by Moroni
   Granja (MIT): the research and the code that make Alabaster Dawn run in an Android WebView. The game
   host in this app is its code; see `NOTICE.md`.

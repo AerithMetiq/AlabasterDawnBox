@@ -1,5 +1,6 @@
 package io.github.aerithmetiq.alabasterdroid
 
+import android.app.ActivityManager
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -28,19 +29,21 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.imageview.ShapeableImageView
 import com.google.android.material.textfield.TextInputEditText
 import `in`.dragonbra.javasteam.steam.authentication.IAuthenticator
 import io.github.aerithmetiq.alabasterdroid.host.GameActivity
+import io.github.aerithmetiq.alabasterdroid.steam.CloudSaves
+import io.github.aerithmetiq.alabasterdroid.steam.CloudSync
 import io.github.aerithmetiq.alabasterdroid.steam.GameDownload
 import io.github.aerithmetiq.alabasterdroid.steam.GameDownloader
 import io.github.aerithmetiq.alabasterdroid.steam.LoginRejectedException
 import io.github.aerithmetiq.alabasterdroid.steam.LoginStore
+import io.github.aerithmetiq.alabasterdroid.steam.SaveAction
+import io.github.aerithmetiq.alabasterdroid.steam.SaveStep
+import io.github.aerithmetiq.alabasterdroid.steam.SteamCloudFiles
 import io.github.aerithmetiq.alabasterdroid.steam.SteamGame
 import io.github.aerithmetiq.alabasterdroid.steam.SteamLogin
 import io.github.aerithmetiq.alabasterdroid.steam.SteamProbe
@@ -53,7 +56,8 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 
 /**
- * The home screen: sign in to Steam (password with Steam Guard, or QR code), then PLAY.
+ * The home screen: sign in to Steam (password with Steam Guard, or QR code), then PLAY. PLAY syncs
+ * the saves with Steam Cloud first, and coming back from the game syncs them again (see [syncSaves]).
  *
  * The login is kept encrypted ([LoginStore]); on every start the launcher logs on in the background to
  * refresh the persona name and avatar and to find out early whether the login still works. A login
@@ -96,16 +100,17 @@ class LauncherActivity : AppCompatActivity() {
     /** Shown on the button while file data is moving; null before that. UI thread only. */
     private var downloadPercent: Int? = null
 
+    /** A Steam Cloud save sync in progress, with its own session, and the question it may be waiting on. */
+    @Volatile private var syncing = false
+    @Volatile private var syncSession: SteamSession? = null
+    @Volatile private var conflictAnswer: CompletableFuture<Boolean?>? = null
+
     private val prefs get() = getSharedPreferences("launcher", MODE_PRIVATE)
     private val avatarFile get() = File(filesDir, "avatar.jpg")
     private val deviceName get() = "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL} (Alabaster Droid)"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        /* Edge to edge, with see-through system bars, so the background runs under the status bar. */
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
         setContentView(R.layout.activity_launcher)
         store = LoginStore(this)
 
@@ -125,16 +130,14 @@ class LauncherActivity : AppCompatActivity() {
         avatar = findViewById(R.id.avatar)
         gameArt = findViewById(R.id.game_art)
 
-        /* The avatar floats in the corner, outside the controls' layout, so it is moved clear of the
-         * status bar here; the insets are passed on untouched for that layout to use. */
+        /* The gold status bar. The avatar floats in the corner, outside the controls' layout, so it
+         * is moved clear of the bar here. */
         val d = resources.displayMetrics.density
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(android.R.id.content)) { _, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+        Screens.goldStatusBar(this) { bars ->
             avatar.updateLayoutParams<ViewGroup.MarginLayoutParams> {
                 topMargin = bars.top + (14 * d).toInt()
                 marginEnd = bars.right + (18 * d).toInt()
             }
-            insets
         }
         gameTitle = findViewById(R.id.game_title)
         wordmark = findViewById(R.id.wordmark)
@@ -161,12 +164,14 @@ class LauncherActivity : AppCompatActivity() {
         super.onResume()
         loadGameArt()
         updatePlay()
+        syncAfterGame()
     }
 
     override fun onDestroy() {
         leaving = true
         cancelSession()
         cancelDownload()
+        cancelSync()
         super.onDestroy()
     }
 
@@ -225,7 +230,9 @@ class LauncherActivity : AppCompatActivity() {
         playCaption.text = when {
             downloading -> "Downloading Alabaster Dawn · keep Alabaster Droid open until it finishes"
             !GameFiles.installed(this) -> "Downloads your own copy of Alabaster Dawn from Steam"
-            else -> "Saves stay on this device for now · Steam Cloud sync is not built yet"
+            playOffline -> "Plays the saves on this device · no Steam Cloud sync"
+            GameFiles.cloudUploads(this) -> "Syncs your saves with Steam Cloud before and after you play"
+            else -> "Downloads your Steam Cloud saves · uploads are off (Settings)"
         }
     }
 
@@ -515,14 +522,174 @@ class LauncherActivity : AppCompatActivity() {
                 setStatus("Stopping the download…")
                 cancelDownload()
             }
-            GameFiles.installed(this) -> {
-                setStatus("")
-                startActivity(Intent(this, GameActivity::class.java))
-            }
+            GameFiles.installed(this) ->
+                if (prefs.getBoolean(KEY_OFFLINE, false)) {
+                    setStatus("")
+                    startGame(online = false)
+                } else {
+                    syncSaves(thenPlay = true)
+                }
             prefs.getBoolean(KEY_OFFLINE, false) ->
                 setStatus("Alabaster Dawn isn't downloaded yet. Untick Play offline, then press DOWNLOAD.")
             else -> startDownload()
         }
+    }
+
+    private fun startGame(online: Boolean) {
+        /* Remembered on disk: Android may stop the launcher while the game runs. */
+        prefs.edit().putBoolean(KEY_SYNC_AFTER_GAME, online).apply()
+        startActivity(Intent(this, GameActivity::class.java))
+    }
+
+    /* ------------------------------------------------------ Steam Cloud saves ---- */
+
+    /** Back from the game: send what changed, when the game was started online and uploads are on. */
+    private fun syncAfterGame() {
+        if (!prefs.getBoolean(KEY_SYNC_AFTER_GAME, false) || syncing) return
+        /* One try per game session; whatever it does not send, the next PLAY's sync will. */
+        prefs.edit().putBoolean(KEY_SYNC_AFTER_GAME, false).apply()
+        if (store.load() == null || !GameFiles.installed(this)) return
+        if (GameFiles.cloudUploads(this)) syncSaves(thenPlay = false)
+        else setStatus("Your saves stay on this device: uploads to Steam Cloud are off (Settings).")
+    }
+
+    /**
+     * Syncs the save folder with Steam Cloud on a worker with a session of its own, then starts the
+     * game when [thenPlay]. Downloads always happen; uploads only when they are switched on in
+     * Settings. When both sides changed, the user is asked which to keep, and cancelling changes
+     * nothing. If Steam cannot be reached, PLAY carries on with the saves on this device.
+     */
+    private fun syncSaves(thenPlay: Boolean) {
+        val login = store.load() ?: return
+        if (syncing) return
+        syncing = true
+        val uploads = GameFiles.cloudUploads(this)
+        setBusy(true, "Checking your Steam Cloud saves…")
+        Thread({
+            val s = SteamSession()
+            var launch = thenPlay
+            var end: String
+            try {
+                /* The start-up profile refresh logs on with the same login; let it finish first. */
+                while (refreshing && !leaving) Thread.sleep(100)
+                waitForGameToEnd()
+                syncSession = s
+                if (leaving) throw CancellationException()
+                val reached = try {
+                    s.connect()
+                    s.logOn(login)
+                    true
+                } catch (e: LoginRejectedException) {
+                    throw e
+                } catch (e: IOException) {
+                    Log.i(TAG, "cloud sync: Steam not reached", e)
+                    false
+                }
+                if (!reached) {
+                    end = if (thenPlay) "Couldn't reach Steam. Playing with the saves on this device."
+                    else "Couldn't reach Steam. Your saves are on this device and sync at the next PLAY."
+                } else {
+                    val sync = CloudSync(
+                        SteamCloudFiles(s, SteamGame.ALABASTER_DAWN.appId),
+                        GameFiles.saves(this), GameFiles.syncBase(this), GameFiles.saveBackups(this),
+                    )
+                    val check = sync.check()
+                    var steps = check.steps
+                    var keptLocal = emptySet<String>()
+                    var cancelled = false
+                    if (steps.any { it.action == SaveAction.CONFLICT }) {
+                        when (askConflict(steps, uploads)) {
+                            true -> steps = CloudSaves.resolve(steps, cloudWins = true)
+                            false -> {
+                                keptLocal = steps.filter { it.action == SaveAction.CONFLICT }.map { it.name }.toSet()
+                                steps = CloudSaves.resolve(steps, cloudWins = false)
+                            }
+                            null -> cancelled = true
+                        }
+                    }
+                    if (cancelled) {
+                        launch = false
+                        end = "Nothing was changed. Press PLAY to choose again, or tick Play offline to use this device's saves."
+                    } else {
+                        val out = sync.apply(check, steps, uploads, keptLocal) { text -> ui { setStatus(text) } }
+                        end = CloudSaves.summary(out.downloaded, out.uploaded, out.notUploaded, uploads, out.uploadError)
+                        Log.i(TAG, "cloud sync: downloaded ${out.downloaded}, uploaded ${out.uploaded}, not uploaded ${out.notUploaded}")
+                    }
+                }
+            } catch (e: LoginRejectedException) {
+                store.clearLogin()
+                launch = false
+                end = "Your Steam login has expired. Sign in again."
+            } catch (e: Throwable) {
+                launch = false
+                end = if (leaving || store.load() == null) {
+                    "Signed out."
+                } else {
+                    Log.w(TAG, "cloud sync failed", e)
+                    "Steam Cloud sync failed: ${SteamProbe.describe(e)}. " +
+                        if (thenPlay) "Press PLAY to try again, or tick Play offline." else "It is tried again at the next PLAY."
+                }
+            } finally {
+                s.close()
+                syncSession = null
+                syncing = false
+            }
+            ui {
+                setBusy(false, end)
+                render()
+                if (launch) startGame(online = true)
+            }
+        }, "cloud-sync").start()
+    }
+
+    /**
+     * Asks which side's saves to keep, on the UI thread, while the sync's worker waits. True: Steam
+     * Cloud's. False: this device's. Null: cancelled.
+     */
+    private fun askConflict(steps: List<SaveStep>, uploads: Boolean): Boolean? {
+        val answer = CompletableFuture<Boolean?>()
+        conflictAnswer = answer
+        val (here, there) = CloudSaves.conflictTimes(steps)
+        val count = CloudSaves.count(steps, SaveAction.CONFLICT)
+        ui {
+            setStatus("Waiting for your choice…")
+            AlertDialog.Builder(this)
+                .setTitle("Which saves do you want to keep?")
+                .setMessage(
+                    "The saves on this device and in Steam Cloud are different ($count ${if (count == 1) "file" else "files"}).\n\n" +
+                        "Steam Cloud: last saved ${CloudSaves.time(there)}\n" +
+                        "This device: last saved ${CloudSaves.time(here)}\n\n" +
+                        "Steam Cloud's: this device's saves are replaced. They are copied to the SaveBackups folder first.\n\n" +
+                        "This device's: " +
+                        if (uploads) "they are uploaded and replace the ones in Steam Cloud."
+                        else "Steam Cloud is left as it is, because uploads are off (Settings)."
+                )
+                .setPositiveButton("Steam Cloud's") { _, _ -> answer.complete(true) }
+                .setNegativeButton("This device's") { _, _ -> answer.complete(false) }
+                .setNeutralButton("Cancel") { _, _ -> answer.complete(null) }
+                .setOnCancelListener { answer.complete(null) }
+                .show()
+        }
+        return try {
+            answer.get()
+        } finally {
+            conflictAnswer = null
+        }
+    }
+
+    /** The game runs in its own process; give it a moment to be gone, so no save is mid-write. */
+    private fun waitForGameToEnd() {
+        val am = getSystemService(ActivityManager::class.java) ?: return
+        val name = "$packageName:game"
+        repeat(30) {
+            if (am.runningAppProcesses?.any { it.processName == name } != true) return
+            Thread.sleep(100)
+        }
+    }
+
+    private fun cancelSync() {
+        conflictAnswer?.cancel(true)
+        cancelSession(syncSession)
     }
 
     /**
@@ -604,6 +771,7 @@ class LauncherActivity : AppCompatActivity() {
     private fun signOut() {
         cancelSession()
         cancelDownload()
+        cancelSync()
         store.clearLogin()
         avatarFile.delete()
         password.setText("")
@@ -619,5 +787,6 @@ class LauncherActivity : AppCompatActivity() {
     private companion object {
         const val TAG = "AlabasterDroid"
         const val KEY_OFFLINE = "playOffline"
+        const val KEY_SYNC_AFTER_GAME = "syncAfterGame"
     }
 }

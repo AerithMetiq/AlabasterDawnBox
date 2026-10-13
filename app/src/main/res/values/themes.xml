@@ -8,7 +8,10 @@
         <item name="colorSecondary">@color/accent</item>
         <item name="colorOnSecondary">@color/on_accent</item>
         <item name="android:colorBackground">@color/launcher_bg_bottom</item>
-        <item name="android:statusBarColor">@color/launcher_bg_top</item>
+        <!-- The status bar is gold on every screen: see Screens.goldStatusBar, which draws it. These
+             two are what shows for the moment before a screen has called it. -->
+        <item name="android:statusBarColor">@color/accent</item>
+        <item name="android:windowLightStatusBar">true</item>
         <item name="android:navigationBarColor">@color/launcher_bg_bottom</item>
         <item name="alertDialogTheme">@style/AppDialog</item>
     </style>

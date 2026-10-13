@@ -1,19 +1,59 @@
 package io.github.aerithmetiq.alabasterdroid
 
+import android.app.Activity
 import android.content.Context
+import android.graphics.Color
 import android.graphics.Typeface
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.button.MaterialButton
 
 /** Building blocks for the secondary screens, so they share the launcher's look without a layout each. */
 object Screens {
 
     fun dp(context: Context, value: Int): Int = (value * context.resources.displayMetrics.density).toInt()
+
+    /**
+     * The status bar in the accent gold, with dark icons, on every Android version. Call after
+     * `setContentView`. The window is laid out edge to edge and a gold strip the height of the status
+     * bar is drawn over the top of the content: Android 15+ ignores a status bar colour, so a strip is
+     * the one way that works everywhere. [onBars] also gets the bar sizes, for views that float
+     * outside the `fitsSystemWindows` layout.
+     */
+    fun goldStatusBar(activity: Activity, onBars: (Insets) -> Unit = {}) {
+        val window = activity.window
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        @Suppress("DEPRECATION")
+        run {
+            window.statusBarColor = Color.TRANSPARENT
+            window.navigationBarColor = Color.TRANSPARENT
+        }
+        WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = true
+        val content = activity.findViewById<FrameLayout>(android.R.id.content)
+        val strip = View(activity).apply { setBackgroundColor(ContextCompat.getColor(activity, R.color.accent)) }
+        content.addView(strip, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, Gravity.TOP))
+        ViewCompat.setOnApplyWindowInsetsListener(content) { _, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+            if (strip.layoutParams.height != top) {
+                strip.layoutParams = strip.layoutParams.apply { height = top }
+            }
+            onBars(bars)
+            insets
+        }
+        ViewCompat.requestApplyInsets(content)
+    }
 
     /** A full-screen column on the launcher's gradient, scrolling when it is taller than the screen. */
     fun page(context: Context, build: LinearLayout.() -> Unit): View {
@@ -25,7 +65,7 @@ object Screens {
         }
         return ScrollView(context).apply {
             isFillViewport = true
-            /* Clear of the status and navigation bars on edge-to-edge Android (15+). */
+            /* Clear of the status and navigation bars: every screen is edge to edge (goldStatusBar). */
             fitsSystemWindows = true
             setBackgroundResource(R.drawable.launcher_bg)
             addView(column)

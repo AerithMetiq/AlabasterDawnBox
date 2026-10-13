@@ -40,6 +40,7 @@ class SteamProbeActivity : AppCompatActivity() {
             addView(Screens.row(ctx, 12, run, share, back))
             addView(report)
         })
+        Screens.goldStatusBar(this)
         back.post { back.requestFocus() }
         start()
     }

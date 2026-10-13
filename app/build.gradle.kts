@@ -66,6 +66,9 @@ dependencies {
     implementation("in.dragonbra:javasteam:1.8.0")
     implementation("org.bouncycastle:bcprov-jdk18on:1.83")
     implementation("com.google.zxing:core:3.5.3")
+    /* Compile-time only: JavaSteam's protobuf enums (a Steam Cloud file's state) extend a protobuf
+     * type. JavaSteam already brings this version in at runtime. */
+    compileOnly("com.google.protobuf:protobuf-java:4.31.1")
 
     /* The game download calls JavaSteam's coroutine API, and JavaSteam leaves the two decompressors its
      * depot chunks need (zstd, LZMA) for the app to supply. Versions are the ones JavaSteam 1.8.0 uses. */

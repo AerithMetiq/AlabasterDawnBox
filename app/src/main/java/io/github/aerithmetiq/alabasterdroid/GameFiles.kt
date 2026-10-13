@@ -35,4 +35,30 @@ object GameFiles {
 
     private fun titleFile(context: Context, name: String): File? =
         File(root(context), "terra/media/gui/title/$name").takeIf { it.isFile }
+
+    /*
+     * Saves. The host gives the engine `userdata/` as its save root, so the game's `Saves/` folder
+     * (the folder Steam Cloud mirrors) is `userdata/Saves/`. Everything the sync keeps for itself is
+     * outside it, and outside `terra/`, which the downloader cleans.
+     */
+
+    fun saves(context: Context): File = File(root(context), "userdata/Saves")
+
+    /** The checksums of the last sync (see steam/CloudSaves). */
+    fun syncBase(context: Context): File = File(root(context), "cloud-sync.txt")
+
+    /** Local saves a sync replaced or removed, a folder per sync, newest few kept. */
+    fun saveBackups(context: Context): File = File(root(context), "SaveBackups")
+
+    /**
+     * Whether this device's saves are uploaded to Steam Cloud. Off until the user turns it on in
+     * Settings: writing to Steam is deliberate. Downloads do not depend on it.
+     */
+    fun cloudUploads(context: Context): Boolean = prefs(context).getBoolean(KEY_UPLOADS, false)
+
+    fun setCloudUploads(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_UPLOADS, on).apply()
+
+    private fun prefs(context: Context) = context.getSharedPreferences("launcher", Context.MODE_PRIVATE)
+
+    private const val KEY_UPLOADS = "cloudUploads"
 }

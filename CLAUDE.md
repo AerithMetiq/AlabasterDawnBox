@@ -9,7 +9,8 @@ Steam app **3110760**, Early Access) on Android. The user signs in to Steam, the
 their account owns, runs the game's web build (`terra/`) in a WebView, and syncs saves with Steam Cloud.
 Built for controller-first handhelds (the maintainer's devices: **Retroid Pocket Nova**, **AYN Odin 3**)
 and phones. It is a sibling of CrossDroid (CrossCode) in look and purpose; milestone 1 was written
-independently, and CrossDroid code may now be reused with permission (hard rule 2).
+independently; milestone 4's Steam Cloud transfer code is adapted from CrossDroid with permission
+(hard rule 2).
 
 Package / applicationId: `io.github.aerithmetiq.alabasterdroid`. MIT licensed.
 
@@ -35,9 +36,9 @@ Package / applicationId: `io.github.aerithmetiq.alabasterdroid`. MIT licensed.
    original; game art can never be the installed app's icon, because an icon ships inside the APK.
 2. **CrossDroid** (github.com/dain98/CrossDroid) declares no license, but **dain98 has given permission
    to use its code base**. Its code, layouts, images and look may be reused. Every reuse is listed in
-   `NOTICE.md`, credited to dain98 and marked as used with permission; `README.md` and `NOTICE.md` say
-   no CrossDroid code was taken, so update both with the first reuse. The permission covers CrossDroid's
-   own work, not CrossCode game files.
+   `NOTICE.md` ("Code from CrossDroid"), credited to dain98 and marked as used with permission, and
+   the file says so at its top. So far: `steam/SteamCloudFiles.kt`. The permission covers CrossDroid's
+   own work, not CrossCode game files. A local copy of CrossDroid is at `~/CrossDroid`.
 3. **alabaster-android** (github.com/moronigranja/alabaster-android) is **MIT**, © 2026 Moroni Granja.
    Its code may be reused for milestone 3, but every reused file keeps its copyright notice, and the
    reuse is listed in `NOTICE.md`. Prefer copying whole, well-understood pieces over rewriting them: its
@@ -55,11 +56,33 @@ Package / applicationId: `io.github.aerithmetiq.alabasterdroid`. MIT licensed.
 | 1 | Launcher UI, Steam sign-in (password + Steam Guard, QR), encrypted login, profile/avatar, Settings, Steam diagnostics | done; sign-in and diagnostics confirmed on the Retroid Pocket Nova (2026-10-12) |
 | 2 | Download Alabaster Dawn's `terra/` from Steam into `GameFiles.root` with progress | done; download confirmed on the Retroid Pocket Nova (2026-10-12) |
 | 3 | Game host: WebView, Node/NW.js shim, shader/bundle rewrites, gamepad bridge (from alabaster-android) | done; the game runs on the Retroid Pocket Nova (2026-10-12) |
-| 4 | Steam Cloud saves: pull on PLAY, push on quit, conflict handling, offline mode | planned |
+| 4 | Steam Cloud saves: pull on PLAY, push on quit, conflict handling, offline mode | written 2026-10-12, unit-tested. On the Nova the same day: a first PLAY asked about the conflict, downloaded all 9 Cloud files (checksums matched), backed up the 8 local ones and started the game. **Not yet run: an upload, the sync after leaving the game, the Check now screen** |
 
 The main button reads DOWNLOAD while the game is not installed and CANCEL with the percentage during a
-download; once installed it reads PLAY and starts `host.GameActivity`. Saves are local only until
-milestone 4: a first PLAY starts with no save, even if the account has saves in Steam Cloud.
+download; once installed it reads PLAY, which syncs the saves and then starts `host.GameActivity`.
+
+**Steam Cloud saves (milestone 4), how it works:**
+
+- The sync is three-way and per file (`steam/CloudSaves.kt`, pure and unit-tested): besides this
+  device and Steam Cloud it keeps a base, the SHA-1 each file had when the two sides were last equal
+  (`GameFiles.syncBase`, `cloud-sync.txt`). Only one side changed: that side wins. Both changed, or
+  different files with no base (a first sync): a conflict, and the user picks one side for all files.
+- PLAY (unless "Play offline" is ticked) runs `LauncherActivity.syncSaves`: downloads first, each
+  replaced local file copied to `SaveBackups/<time>/` (newest 5 kept), then uploads, then the game.
+  Steam unreachable: the game starts with the local saves. A failed download: nothing is changed and
+  the game does not start.
+- Coming back from the game (launcher `onResume`, flag `syncAfterGame` in the `launcher` preferences,
+  so it survives the launcher being stopped) runs the sync again to upload.
+- **Uploads are off by default** (hard rule 5): `GameFiles.cloudUploads`, switched in Settings →
+  Steam Cloud saves (`CloudSavesActivity`), whose "Check now" is the dry run: it lists every file
+  and what a sync would do, and changes nothing. With uploads off, changed files are counted and
+  left; they stay "changed here" and go up once uploads are on.
+- The app **never deletes a Steam Cloud file**. A save deleted on the device is left in the Cloud
+  (and not fetched again until the Cloud copy changes); a file deleted in the Cloud is moved to the
+  backup folder here. Zero-byte local files are ignored.
+- `steam/SteamCloudFiles.kt` is the only code that writes to Steam (`upload`). It uploads without an
+  upload batch (`uploadBatchId = 0`), as CrossDroid does; a batch needs the auth session's client id,
+  which is not kept.
 
 **What the device's diagnostics report showed (2026-10-12, public build 25724722):**
 
@@ -69,7 +92,7 @@ milestone 4: a first PLAY starts with no save, even if the account has saves in 
 - Steam Cloud (`ufs`): quota 100 MB, 500 files, pattern `*` recursive. The root is the game's `Saves/`
   folder (Windows `%LOCALAPPDATA%/Alabaster Dawn/Saves/`, Linux `~/.config/Alabaster Dawn/Saves/`), and
   Cloud file names are relative to it under the `%WinAppDataLocal%` token: `Default/`, `Backups/`,
-  `Backups2/`, each with `Save_ID_auto.save`, `Save_ID_0001.save`, `System.save`. Milestone 4 maps
+  `Backups2/`, each with `Save_ID_auto.save`, `Save_ID_0001.save`, `System.save`. `CloudSaves.relative` maps
   these names to the device's save folder; keep that folder outside `terra/` (the downloader deletes
   files under `terra/` that the manifest does not list).
 
@@ -89,6 +112,10 @@ app/src/main/java/io/github/aerithmetiq/alabasterdroid/
   steam/ProbeReport.kt    pure formatting of probe data (unit-tested)
   steam/GameDownload.kt   pure download decisions: depot order, where terra/ is, wanted files (unit-tested)
   steam/GameDownloader.kt downloads terra/ over JavaSteam's CDN client, resumable, verified
+  steam/CloudSaves.kt     pure save-sync decisions: Cloud names, the three-way plan, wording (unit-tested)
+  steam/CloudSync.kt      reads both sides and carries a plan out: downloads, backups, uploads
+  steam/SteamCloudFiles.kt  list / download / upload one app's Cloud files (adapted from CrossDroid)
+  CloudSavesActivity.kt   Settings → Steam Cloud saves: the uploads switch and the dry-run check
   host/                   the game host, from alabaster-android (commit f1cedd5); see below
   host/InProcessRenderer.kt  ours: keeps the page out of a 32-bit renderer process (see Performance)
 app/src/main/assets/ada-shim.js   alabaster-android's Node/NW.js shim (settings polled twice a second, not per frame)
@@ -99,7 +126,7 @@ app/src/main/res/layout/activity_launcher.xml   the launcher layout
 
 ```sh
 ./gradlew :app:assembleDebug        # app/build/outputs/apk/debug/app-debug.apk
-./gradlew :app:testDebugUnitTest    # JVM unit tests (ProbeReportTest, QrCodeFitTest, GameDownloadTest)
+./gradlew :app:testDebugUnitTest    # JVM unit tests (ProbeReportTest, QrCodeFitTest, GameDownloadTest, CloudSavesTest, host/*)
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb logcat -s AlabasterDroid        # the app's log tag
 ```
@@ -130,7 +157,8 @@ to differ, and say what changed in the file's header and in `NOTICE.md`.
 - `GameActivity` runs in its own process (`:game`). Exit finishes the activity and then kills that
   process, so the launcher resumes. Its preferences are the `ada` file, read only in that process.
 - Saves: `GameFiles.root/userdata/` is the engine's `/saves`, so files land in
-  `userdata/Saves/Default/…`, the Steam layout. Milestone 4 syncs `userdata/Saves/` with Steam Cloud.
+  `userdata/Saves/Default/…`, the Steam layout. The launcher syncs `userdata/Saves/`
+  (`GameFiles.saves`) with Steam Cloud, only while the game's process is not running.
 - The host logs under the tag `RfPort` (upstream's): `adb logcat -s AlabasterDroid RfPort`. In the
   game, Back opens the side menu; Troubleshoot there shows and shares the diagnostics record, which is
   also written to `userdata/` as a log file.
@@ -217,7 +245,8 @@ At 960x540 in a busy area the game ran at 58-59 fps: about one dropped frame a s
   game unless the page runs in the app's own 64-bit process, which `InProcessRenderer` arranges
   (see Performance).
 - Toolchain: AGP 8.13.2, Kotlin 2.2.10, Gradle 8.14.3, compileSdk/targetSdk 36, minSdk 26, Java 17 target.
-  targetSdk 36 means edge-to-edge on Android 15+: screens use `fitsSystemWindows`.
+  targetSdk 36 means edge-to-edge on Android 15+: screens use `fitsSystemWindows` and
+  `Screens.goldStatusBar`.
 
 ## Steam / JavaSteam notes
 
@@ -230,6 +259,8 @@ At 960x540 in a busy area the game ran at 58-59 fps: about one dropped frame a s
   swallows chunk errors. `GameDownloader` calls the core API instead (`SteamApps.getDepotDecryptionKey`,
   `SteamContent.getManifestRequestCode` / `getServersForSteamPipe`, `cdn.Client`, `DepotChunk.process`)
   and downloads only the files under `terra/`. Revisit if a later JavaSteam adds a working filter.
+- `com.google.protobuf:protobuf-java` is `compileOnly` (4.31.1): `SteamCloudFiles` reads a protobuf
+  enum (a Cloud file's persist state; only `Persisted` files count as existing).
 - JavaSteam leaves the chunk decompressors to the app (`compileOnly`): `com.github.luben:zstd-jni` (the
   `@aar`, for Android's native libraries) and `org.tukaani:xz`. Without them chunks fail to unpack.
   `SteamContent` returns coroutine `Deferred`s, so `kotlinx-coroutines-core` is a direct dependency.
@@ -259,6 +290,9 @@ At 960x540 in a busy area the game ran at 58-59 fps: about one dropped frame a s
 
 ## UI conventions
 
+- **The status bar is the accent gold with dark icons on every launcher screen**: call
+  `Screens.goldStatusBar(this)` after `setContentView`. It lays the window out edge to edge and
+  draws a gold strip the height of the status bar, because Android 15+ ignores `statusBarColor`.
 - Match the launcher: dark gradient (`launcher_bg`), one accent colour (`@color/accent`, dawn gold),
   `text_primary` / `text_secondary`, the serif "ALABASTER / DROID" wordmark.
 - **Controller-first:** every control focusable, with the white focus ring (`focus_ring`,

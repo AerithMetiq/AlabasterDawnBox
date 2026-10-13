@@ -7,9 +7,10 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/launcher_bg">
-    <!-- The launcher draws edge to edge on every Android version (see LauncherActivity): the background,
-         the game's art and the scrim fill the whole screen, under transparent system bars, and only
-         the controls' layout below is kept clear of the bars (fitsSystemWindows). -->
+    <!-- The launcher draws edge to edge on every Android version: the background, the game's art and
+         the scrim fill the whole screen, the gold status bar strip is drawn over their top edge
+         (Screens.goldStatusBar), and only the controls' layout below is kept clear of the bars
+         (fitsSystemWindows). -->
 
     <ImageView
         android:id="@+id/game_art"

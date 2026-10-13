@@ -85,8 +85,9 @@ The MIT License that covers that code:
 > OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 > CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-## Prior art
-* **CrossDroid** (https://github.com/dain98/CrossDroid): the Steam-launcher design this app's look
-  follows (dark two-column launcher, Steam sign-in, Steam Cloud saves) for CrossCode. CrossDroid declares
-  no license, so **no code or assets were taken from it**; this app is an independent implementation on
-  JavaSteam's own API.
+## CrossDroid
+
+**CrossDroid** (https://github.com/dain98/CrossDroid) by **dain98** is the Steam launcher for
+CrossCode whose design this app's look follows (dark two-column launcher, Steam sign-in, Steam Cloud
+saves). **No code or assets are taken from it**; this app is an independent implementation on
+JavaSteam's own API.
