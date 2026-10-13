@@ -1,0 +1,461 @@
+/*
+ * From alabaster-android (https://github.com/moronigranja/alabaster-android), commit f1cedd5.
+ * MIT License, Copyright (c) 2026 Moroni Granja. Changed: the package name; game files are read from disk rather than through SAF;
+ * and the precision raise runs after the array lift.
+ */
+package io.github.aerithmetiq.alabasterdroid.host
+
+import android.content.res.AssetManager
+import android.net.Uri
+import android.util.Log
+import android.webkit.WebResourceResponse
+import androidx.webkit.WebViewAssetLoader
+import java.io.ByteArrayInputStream
+import java.io.File
+
+/**
+ * Serves the picked game folder to the WebView under `https://appassets.androidplatform.net/game/`.
+ *
+ * Every request is answered from the immutable [GameIndex]; anything missing returns an empty
+ * response immediately, in-process. That matters: each sound resource probes `.flac` (which this
+ * build does not ship) before falling back, and those probes must not become network round trips.
+ *
+ * `handle` is called on background threads and may run concurrently, so the mutable state it holds
+ * ([rewrite], [barycentric]) is concurrent and it never touches a view.
+ */
+class GameAssetHandler(
+    private val index: GameIndex,
+    /** Which game this tree is: its page root, shim and whether the engine rewrites apply. */
+    private val profile: GameProfile,
+    private val assets: AssetManager,
+    /** Fallback mode: pull the shim in with a script tag, for WebViews without document-start scripts. */
+    private val injectShim: Boolean,
+    /** Records every request, and any request that stays in flight too long (a hung SAF read). */
+    private val diag: Diag,
+) : WebViewAssetLoader.PathHandler {
+
+    private val tracker = AssetTracker()
+    private val slowLogged = java.util.concurrent.atomic.AtomicInteger()
+    private val missedLogged = java.util.concurrent.atomic.AtomicInteger()
+
+    /** The rewritten body of every request that was rewritten, so a re-request costs no SAF read. */
+    private val rewrite = RewriteCache()
+
+    /** The game's own build string, parsed from the bundle the first time it is served. */
+    @Volatile
+    private var gameBuild: String? = null
+
+    /**
+     * Whether the phone ladder actually went into `bundle.js`: null until the bundle has been served.
+     * The option labels and the ladder describe the same rungs, so a build that does not use the
+     * release's ladder (the demo's Resolution option is 640x360 / 1280x720 / 1920x1080) must keep its
+     * own truthful labels instead of getting the phone ladder's text.
+     */
+    @Volatile
+    private var ladderRewritten: Boolean? = null
+
+    /** Whether a fragment shader's paired `.vert` declares the varying: a second SAF read, memoised. */
+    private val barycentric = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    /** Paths already reported as too large to cache, so the warning is logged once each. */
+    private val cacheWarned = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    override fun handle(path: String): WebResourceResponse {
+        val rel = Uri.decode(path).trimStart('/')
+        if (rel.isEmpty() || rel.split('/').any { it == ".." }) return miss(rel)
+        tracker.started(rel)
+        try {
+            return serve(rel)
+        } finally {
+            val took = tracker.finished(rel)
+            /* A tree on a slow card shows up here long before it fails outright. */
+            if (took >= SLOW_MS && slowLogged.incrementAndGet() <= SLOW_LOG_LIMIT) {
+                diag.line("slow asset ${took}ms $rel")
+            }
+        }
+    }
+
+    private fun serve(rel: String): WebResourceResponse {
+        if (rel == profile.shimPath) {
+            if (!injectShim) return miss(rel)
+            val shim = readShim()
+            if (shim == null) return miss(rel)
+            return ok("application/javascript", "utf-8", shim)
+        }
+
+        /* The shader self-test's cases (FINDINGS §22.11): the same file in every spelling the port
+         * could serve, built from the game's own bytes on this device and served to the page, which
+         * compiles each one on the WebView's own context and reports what this device's front end
+         * takes. A reserved path — no game file lives at `ada-variants` — and deliberately not cached:
+         * the page asks once, when the panel's button is tapped. Only a game with the shader machinery
+         * has these files at all. */
+        if (profile.rewrites && rel == ShaderVariants.INDEX) {
+            val names = ShaderVariants.names().joinToString("\n", postfix = "\n")
+            return ok("text/plain", "utf-8", names.toByteArray(Charsets.UTF_8))
+        }
+        if (profile.rewrites && rel.startsWith("${ShaderVariants.INDEX}/")) {
+            val name = rel.removePrefix("${ShaderVariants.INDEX}/")
+            val text = ShaderVariants.text(name, ::gameShader)
+            if (text == null) {
+                /* Half a shader is worse than none: the page is told nothing is served, and the record
+                 * says why - the game's bytes on this device do not carry what that case edits, which is
+                 * itself worth knowing (a different build, a file a player edited, a copy that moved
+                 * through a line-ending change). */
+                diag.line("shader self-test case $name: the game's bytes carry none of its text")
+                return miss(rel)
+            }
+            return ok("text/plain", "utf-8", text.toByteArray(Charsets.UTF_8))
+        }
+
+        val entry = index.find(rel) ?: return miss(rel)
+        if (entry.isDir) return miss(rel)
+        /* A rewritten asset served before: the bytes are the same for the process lifetime, so this
+         * skips both the 12.7 MB read and the rewrite. ok() builds a fresh stream per call. */
+        if (profile.rewrites) {
+            rewrite.get(rel)?.let { cached ->
+                val mime = mimeOf(rel)
+                return ok(mime, encodingOf(mime), cached)
+            }
+        }
+
+        var body = read(entry) ?: return miss(rel)
+        if (profile.rewrites) {
+            /* `bundle.js` carries the engine's own `TEX_SLOT_COUNT`, and the preload scanner asks for
+             * it before a document-start script's bridge call can land (measured on the Fold 7). Hold
+             * that one request briefly so the decision is taken with the page's link outcome in hand; a
+             * page that never answers times out into the count-based plan, unchanged. */
+            if (rel == BUNDLE_JS) {
+                ShaderSlots.awaitReport(WAIT_FOR_REPORT_MS)
+                ShaderSlots.lock()
+            }
+            /* Whether this file is lifted into the array spelling some fragment front ends accept does
+             * *not* depend on the page's own compiler any more: the probe can accept declarations the
+             * engine's own compiles then refuse, and that mistake costs a frozen boot (FINDINGS 22.17),
+             * while lifting is valid ES 3.0 everywhere. The probe's answer is still recorded, by
+             * [PortBridge.setShaderArrays]. */
+            /* Only the assets that are actually rewritten are cached: everything else (images, audio,
+             * JSON) is served verbatim and read once per boot, and caching all 2 652 of them
+             * would cost tens of megabytes for nothing. The `.vert` shaders only join in when the
+             * device cannot carry the game's own 256-slot uniform table (see [ShaderSlots]). */
+            val vertexShaders = ShaderSlots.rewrites()
+            val cacheable = rel == BUNDLE_JS || rel == OPTIONS_DB ||
+                (ShaderPrecision.rewrites(rel) || rel.endsWith(".frag")) ||
+                (injectShim && rel == profile.indexHtml) ||
+                ShaderArrays.rewrites(rel) ||
+                (vertexShaders && rel.endsWith(".vert"))
+            if (injectShim && rel == profile.indexHtml) body = injectShimTag(body)
+            if (rel.endsWith(".frag")) body = keepBarycentricAlive(rel, body)
+            if (rel.endsWith(".vert")) body = vertexShader(rel, body)
+            if (rel.endsWith(".frag")) body = ditherGrid(rel, body)
+            if (ShaderArrays.rewrites(rel)) body = arrayTypes(rel, body)
+            /* Alabaster Droid: after the array lift (which looks for the game's own precision line in
+             * the water shaders), the shaders that need it are raised to highp; see [ShaderPrecision]. */
+            if (rel.endsWith(".frag") || rel.endsWith(".vert")) body = ShaderPrecision.rewrite(rel, body)
+            if (rel == BUNDLE_JS) body = phoneResolutionLadder(rel, body)
+            if (rel == OPTIONS_DB) body = relabelResolutions(rel, body)
+            if (cacheable && !rewrite.put(rel, body) && cacheWarned.add(rel)) {
+                Log.w(TAG, "not caching $rel: the rewritten set no longer fits the rewrite cache")
+            }
+        } else if (injectShim && rel == profile.indexHtml) {
+            body = injectShimTag(body)
+        }
+
+        val mime = mimeOf(rel)
+        return ok(mime, encodingOf(mime), body)
+    }
+
+    /** The profile's shim - the script the entry page runs before its own. */
+    private fun readShim(): ByteArray? = try {
+        assets.open(profile.shimAsset).use { it.readBytes() }
+    } catch (e: Exception) {
+        Log.e(TAG, "cannot read the shim ${profile.shimAsset}", e)
+        null
+    }
+
+    /** Requests still unfinished after [thresholdMs]: a path here is a stalled SAF read, not a stall. */
+    fun stuck(thresholdMs: Long): List<String> = tracker.stuck(thresholdMs)
+
+    /** The game's own build, once `bundle.js` has been served; null before that. */
+    fun gameBuild(): String? = gameBuild
+
+    /** One line for the diagnostics header: what the asset path has done so far. */
+    fun counters(): String = tracker.counters() + "; rewrite " + rewrite.summary()
+
+    /**
+     * The engine renders at `SCREEN (640x360) x SCALE` and offers SCALE from `RESOLUTION_MAP`, whose
+     * integer rungs (1, 2, 3, 4, 6) are too coarse on a phone: 1280x720 saturates the Adreno 730
+     * (measured 99.9% GPU busy, ~20-40 fps) while 640x360 leaves it at 55-65% at a locked 60 fps.
+     * This rewrites the ladder to 640x360 / 960x540 / 1280x720 / 1920x1080 / 2560x1440 so the middle
+     * rung exists, and relabels the option accordingly. Value 0 keeps its old meaning, so existing
+     * players' saved choice is unchanged; the game's own files are never modified.
+     */
+    private fun phoneResolutionLadder(rel: String, source: ByteArray): ByteArray {
+        val text = String(source, Charsets.UTF_8)
+        gameBuild = GameVersion.fromBundle(text)
+        val slots = ShaderSlots.slots()
+        val ladder = if (text.contains(RESOLUTION_MAP_ORIGINAL)) {
+            Log.i(TAG, "rewriting the resolution ladder in $rel")
+            ladderRewritten = true
+            text.replace(RESOLUTION_MAP_ORIGINAL, RESOLUTION_MAP_PHONE)
+        } else {
+            Log.w(TAG, "$rel has no '$RESOLUTION_MAP_ORIGINAL'; leaving it unmodified")
+            ladderRewritten = false
+            text
+        }
+        if (slots >= ShaderSlots.GAME) return ladder.toByteArray(Charsets.UTF_8)
+        Log.i(TAG, "TEX_SLOT_COUNT $slots in $rel")
+        return ShaderSlots.rewrite(ladder, slots).toByteArray(Charsets.UTF_8)
+    }
+
+    /**
+     * The uniform table the vertex shaders and the engine both size from `TEX_SLOT_COUNT`: on a device
+     * whose vertex budget is the GLES3 minimum the game's own 256 table cannot be compiled (see
+     * [ShaderSlots]), which is also where `gui.vert`'s two tables get packed. The engine's own constant
+     * is rewritten in `bundle.js`, which must agree with the served shaders.
+     */
+    private fun vertexShader(rel: String, source: ByteArray): ByteArray {
+        if (!ShaderSlots.rewrites()) return source
+        val text = String(source, Charsets.UTF_8)
+        val slots = ShaderSlots.slots()
+        val pack = ShaderSlots.packs() && ShaderSlots.tables(text) > 1
+        val rewritten = ShaderSlots.rewriteShader(text, slots, pack)
+        if (rewritten == text) return source
+        Log.i(TAG, "TEX_SLOT_COUNT $slots${if (pack) " packed" else ""} in $rel")
+        return rewritten.toByteArray(Charsets.UTF_8)
+    }
+
+    /**
+     * The five world shaders that index the engine's ordered dither by the art pixel (see
+     * [ShaderDither]). Served indexed by the render pixel, which is where the engine's own
+     * `solid.frag` and the water's radial dither already sit, so a light's fade reads as a stipple
+     * instead of a grid of art-pixel-sized dots. Only the divisor changes.
+     */
+    private fun ditherGrid(rel: String, source: ByteArray): ByteArray {
+        val text = String(source, Charsets.UTF_8)
+        val served = ShaderDither.rewrite(rel, text)
+        if (served == text) return source
+        Log.i(TAG, "dither at the render grid in $rel")
+        return served.toByteArray(Charsets.UTF_8)
+    }
+
+    /**
+     * The array declarations some drivers' ES 3.0 fragment front ends refuse with
+     * `S0032: no default precision defined for variable 'vec4[4]'` (see [ShaderArrays]): lifted into
+     * the declarator spelling the reporting device is known to accept. Only a device whose page
+     * rejected the game's own declarations gets this, and only the served bytes change.
+     */
+    private fun arrayTypes(rel: String, source: ByteArray): ByteArray {
+        val served = ShaderArrays.rewrite(rel, String(source, Charsets.UTF_8))
+        /* Both outcomes go into the record, not only logcat: whether a file was lifted is what a
+         * shader that still fails is read against, and the served bytes are the only place that answer
+         * exists. A file whose bytes carry none of the declarations (another build of the game, or one a
+         * player edited) is served as it came; a *partial* match is served as well, and its count says
+         * so. The Mali run this line exists for reported only the probe's verdict, so a file that was
+         * never lifted and one that was lifted wrongly looked identical (FINDINGS §22.9). */
+        if (served.applied == 0) {
+            Log.w(TAG, "$rel carries none of the array declarations the port lifts; serving it as it came")
+            diag.line("array declarations NOT lifted in $rel (0/${served.expected}): its bytes carry none")
+            return source
+        }
+        Log.i(TAG, "array declarations lifted in $rel (${served.applied}/${served.expected})")
+        diag.line("array declarations lifted in $rel (${served.applied}/${served.expected})")
+        return served.text.toByteArray(Charsets.UTF_8)
+    }
+
+    /** Matches the resolution labels in the option database and gives them the phone ladder's text. */
+    private fun relabelResolutions(rel: String, source: ByteArray): ByteArray {
+        /* The labels and the ladder must describe the same rungs, so this only applies where the
+         * ladder was actually rewritten. `null` means `bundle.js` has not been served yet - the
+         * normal order is index.html's script tag first, and a released game's own file otherwise. */
+        if (ladderRewritten == false) {
+            Log.i(TAG, "$rel keeps its own resolution labels: the phone ladder was not served")
+            return source
+        }
+        var text = String(source, Charsets.UTF_8)
+        if (!text.contains(RESOLUTION_FIRST_LABEL)) {
+            Log.w(TAG, "$rel has no '$RESOLUTION_FIRST_LABEL'; leaving it unmodified")
+            return source
+        }
+        var changed = false
+        for ((langId, label) in RESOLUTION_LABELS) {
+            val pattern = Regex("\"en_US\":\"[^\"]*\",\"langID\":$langId\\b")
+            val replaced = pattern.replaceFirst(text, "\"en_US\":\"$label\",\"langID\":$langId")
+            if (replaced != text) changed = true
+            text = replaced
+        }
+        /* A fresh profile already lands on the rung that holds 60 fps - the rewritten ladder's value
+         * 1 is 960x540 - so the option's default is left alone. (It used to compute a `defaulted`
+         * here and return `text`, so the change it described never reached the served bytes.) */
+        if (!changed) {
+            Log.w(TAG, "could not relabel $rel; resolution labels may not match the scale ladder")
+            return source
+        }
+        Log.i(TAG, "relabelled the resolution option in $rel")
+        return text.toByteArray(Charsets.UTF_8)
+    }
+
+    /**
+     * The engine registers vertex attributes straight from the linked program
+     * (`gl.getActiveAttrib`, bundle ~38760) and looks them up in that global table when it builds a
+     * mesh. Drivers may drop a declared-but-dead attribute, and on Android WebView's native GLES
+     * backend (Adreno 730, "OpenGL ES 3.0 Chromium") `a_barycentricIdx` is dropped: several fragment
+     * shaders declare `v_barycentric` but only ever mention it in commented-out code, so the chain
+     * attribute -> varying -> fragment input is dead. The title screen then throws "Attribute does
+     * not exist!" while creating billboard geometry. ANGLE on desktop keeps the attribute, so this
+     * never shows up on a PC.
+     *
+     * The fix is to make the declaration honest: one unreachable, data-dependent use of the varying
+     * inside main(). Barycentric coordinates are never below the sentinel, so the branch never runs and
+     * rendering is unchanged — **provided the sentinel is representable in the shader's own precision,
+     * or degenerate in a way the compiler tolerates.**
+     *
+     * `-1e30` is not representable in `mediump` (its range ends at ±65504), and where `v_barycentric` is
+     * garbage — the water fragments, whose program is the one that loses `a_barycentricIdx` — the
+     * comparison fired and `main()` returned before drawing anything: **the water has been invisible on
+     * every device since this keep-alive was added** (found 2026-09-30 on the S22 Ultra, whose water
+     * came back the moment the water shaders were served at highp; the maintainer's own recollection is
+     * that it never drew there).
+     *
+     * Making the sentinel representable on its own is *not* the fix: with `-1e4` and the game's own
+     * `mediump` water shaders the Android driver's compiler stalls — the boot stops at
+     * `99.9%, pending 2 (shader=2)`, both water programs. `ShaderArrays` therefore serves the water
+     * **stages** at highp, where this sentinel is representable and the water draws (verified on that
+     * device), and the value below stays as the engine's own.'  It is a `return` rather than a `discard` on purpose - a `discard`
+     * anywhere in a shader typically turns off early-Z on tile-based GPUs, which this game's
+     * overdraw-heavy scenes would pay for. Only the served bytes are rewritten; the file on disk is
+     * untouched.
+     *
+     * A fragment shader is only patched when its same-named vertex shader actually declares the
+     * varying - `plane-depth.frag` and `fx-decal.frag` declare it with a vertex shader that does not,
+     * and using it there would break the link instead.
+     */
+    private fun keepBarycentricAlive(rel: String, source: ByteArray): ByteArray {
+        val text = String(source, Charsets.UTF_8)
+        if (!text.contains(BARYCENTRIC_DECL)) return source
+        if (text.split(BARYCENTRIC).size != 2) return source // already used somewhere: nothing to do
+        if (!vertexProvidesBarycentric(rel)) return source
+        val mainAt = text.lastIndexOf("void main")
+        if (mainAt == -1) return source
+        val braceAt = text.indexOf('{', mainAt)
+        if (braceAt == -1) return source
+        Log.i(TAG, "keeping $BARYCENTRIC live in $rel")
+        return (text.substring(0, braceAt + 1) + KEEP_ALIVE + text.substring(braceAt + 1))
+            .toByteArray(Charsets.UTF_8)
+    }
+
+    /** Memoised: the answer needs a second SAF read of the paired `.vert`, and never changes. */
+    private fun vertexProvidesBarycentric(fragRel: String): Boolean =
+        barycentric.getOrPut(fragRel) { computeVertexProvidesBarycentric(fragRel) }
+
+    private fun computeVertexProvidesBarycentric(fragRel: String): Boolean {
+        val name = fragRel.substringAfterLast('/').removeSuffix(".frag")
+        val vertRel = "terra/data/shader/vertex/$name.vert"
+        val entry = index.find(vertRel) ?: return false
+        val vert = read(entry) ?: return false
+        return String(vert, Charsets.UTF_8).contains(OUT_BARYCENTRIC)
+    }
+
+    private fun read(entry: GameEntry): ByteArray? = try {
+        File(entry.docId).readBytes()
+    } catch (e: Exception) {
+        Log.e(TAG, "cannot read game document ${entry.docId}", e)
+        null
+    }
+
+    /**
+     * A shader file's **own** bytes from the game tree, by its path below `terra/data/shader/` — what
+     * [ShaderVariants] expands and edits for the self-test. The port's own rewrites are deliberately
+     * not in play here: the cases are about the spellings the port *could* serve, so they are built
+     * from the game's text every time.
+     */
+    private fun gameShader(rel: String): String? {
+        val entry = index.find("terra/data/shader/$rel") ?: return null
+        if (entry.isDir) return null
+        return read(entry)?.toString(Charsets.UTF_8)
+    }
+
+    private fun ok(mime: String, encoding: String?, bytes: ByteArray): WebResourceResponse {
+        val headers = HashMap<String, String>(1)
+        headers["Content-Length"] = bytes.size.toString()
+        return WebResourceResponse(mime, encoding, 200, "OK", headers, ByteArrayInputStream(bytes))
+    }
+
+    /** No body, no round trip. Misses are rare (the build ships no .flac, and each sound probes one). */
+    private fun miss(rel: String): WebResourceResponse {
+        tracker.missed(rel)
+        if (missedLogged.incrementAndGet() <= 40) Log.w(TAG, "no such asset: $rel")
+        return WebResourceResponse(null, null, null)
+    }
+
+    /**
+     * Inserts the profile's `<script src="…"></script>` next to the anchor in the entry page:
+     * before the bundle tag for Alabaster Dawn, right after `<head>` for CrossCode (whose first
+     * scripts are in the head and which has no single bundle). The bytes are rewritten in memory; the
+     * file on the user's disk is never touched.
+     */
+    private fun injectShimTag(html: ByteArray): ByteArray {
+        val text = String(html, Charsets.UTF_8)
+        val at = text.indexOf(profile.shimAnchor)
+        if (at == -1) {
+            Log.e(TAG, "${profile.indexHtml} does not contain ${profile.shimAnchor}; serving it unmodified")
+            return html
+        }
+        val cut = if (profile.shimAfterAnchor) at + profile.shimAnchor.length else at
+        val tag = "<script src=\"${profile.shimAsset}\"></script>\n"
+        return (text.substring(0, cut) + tag + text.substring(cut)).toByteArray(Charsets.UTF_8)
+    }
+
+    private fun encodingOf(mime: String): String? = when {
+        mime.startsWith("text/") -> "utf-8"
+        mime == "application/javascript" || mime == "application/json" || mime == "image/svg+xml" -> "utf-8"
+        else -> null
+    }
+
+    private fun mimeOf(path: String): String = when (path.substringAfterLast('.', "").lowercase()) {
+        "html", "htm" -> "text/html"
+        "js" -> "application/javascript"
+        "json" -> "application/json"
+        "css" -> "text/css"
+        "png" -> "image/png"
+        "jpg", "jpeg" -> "image/jpeg"
+        "ico" -> "image/x-icon"
+        "svg" -> "image/svg+xml"
+        "ttf" -> "font/ttf"
+        "ogg" -> "audio/ogg"
+        "wav" -> "audio/wav"
+        "mp3" -> "audio/mpeg"
+        "frag", "vert", "glsl" -> "text/plain"
+        else -> "application/octet-stream"
+    }
+
+    companion object {
+        private const val TAG = "RfPort"
+        /* An asset read this slow means the tree's provider is struggling (a card, a slow volume). */
+        private const val SLOW_MS = 1500L
+        private const val SLOW_LOG_LIMIT = 20
+
+        private const val BUNDLE_JS = "terra/dist/bundle.js"
+        /* Long enough for the page's throwaway shaders to compile and its bridge call to land; the
+         * probe answered in ~170 ms on the Fold 7. */
+        private const val WAIT_FOR_REPORT_MS = 400L
+        private const val OPTIONS_DB = "terra/data/database/options.json"
+        private const val RESOLUTION_MAP_ORIGINAL = "const RESOLUTION_MAP = [1, 2, 3, 4, 6];"
+        private const val RESOLUTION_MAP_PHONE = "const RESOLUTION_MAP = [1, 1.5, 2, 3, 4];"
+        private const val RESOLUTION_FIRST_LABEL = "{\"en_US\":\"640x360\",\"langID\":171}"
+        private val RESOLUTION_LABELS = mapOf(
+            171 to "640x360",
+            172 to "960x540",
+            173 to "1280x720",
+            203 to "1920x1080",
+            204 to "2560x1440",
+        )
+        /** Tests only: the line the handler inserts into a fragment shader (see [KEEP_ALIVE]). */
+        internal fun keepAliveLine(): String = KEEP_ALIVE
+
+        private const val BARYCENTRIC = "v_barycentric"
+        private const val BARYCENTRIC_DECL = "in vec3 $BARYCENTRIC;"
+        private const val OUT_BARYCENTRIC = "out vec3 $BARYCENTRIC;"
+        private const val KEEP_ALIVE =
+            "\n    if (any(lessThan($BARYCENTRIC, vec3(-1e30)))) return; // $BARYCENTRIC keep-alive\n"
+    }
+}

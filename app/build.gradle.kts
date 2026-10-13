@@ -73,5 +73,10 @@ dependencies {
     implementation("com.github.luben:zstd-jni:1.5.7-6@aar")
     implementation("org.tukaani:xz:1.11")
 
+    /* The game host (from alabaster-android): serves the game to the WebView and injects its shim. */
+    implementation("androidx.webkit:webkit:1.17.1")
+
     testImplementation("junit:junit:4.13.2")
+    /* Unit tests only: a real org.json, because android.jar stubs it during local tests. */
+    testImplementation("org.json:json:20250517")
 }

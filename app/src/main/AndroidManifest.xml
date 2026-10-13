@@ -4,8 +4,11 @@
     <!-- Steam: sign-in, the game download and Steam Cloud. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- appCategory="game": tells Android this is a game, so a device's game mode and performance
+         profile treat it as one. The game is limited by one busy thread that has to get a fast core. -->
     <application
         android:allowBackup="false"
+        android:appCategory="game"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -33,6 +36,17 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|navigation|uiMode"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
+
+        <!-- The game itself, in a process of its own: leaving the game ends that process (as the
+             host does in alabaster-android) and the launcher underneath is untouched. -->
+        <activity
+            android:name=".host.GameActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|navigation|density|uiMode"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:process=":game"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen" />
     </application>
 
 </manifest>

@@ -14,11 +14,12 @@ Alabaster Droid is being built in milestones.
 | Milestone | What it adds | State |
 |---|---|---|
 | 1 | Launcher, Steam sign-in (password + Steam Guard, or QR code), profile, Steam diagnostics | **this build** |
-| 2 | Download Alabaster Dawn from Steam on first PLAY | written, being tested |
-| 3 | Run the game: the WebView host, shim and the shader fixes mobile GPUs need | planned |
+| 2 | Download Alabaster Dawn from Steam on first PLAY | done |
+| 3 | Run the game: the WebView host, shim and the shader fixes mobile GPUs need | done |
 | 4 | Steam Cloud saves: pull on PLAY, upload on quit, conflict handling, offline play | planned |
 
-The main button reads **DOWNLOAD** until the game is on the device, then **PLAY**. Until milestone 3 lands, PLAY cannot run the game yet.
+The main button reads **DOWNLOAD** until the game is on the device, then **PLAY**. Saves stay on the
+device until milestone 4; Steam Cloud saves are not pulled yet.
 
 ## What it does today
 
@@ -48,7 +49,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - [CrossDroid](https://github.com/dain98/CrossDroid) by dain98: the launcher design this follows, for
   CrossCode. No code was taken from it (it has no license); see `NOTICE.md`.
 - [RadicalFish Ports / alabaster-android](https://github.com/moronigranja/alabaster-android) by Moroni
-  Granja (MIT): the research that makes Alabaster Dawn run in an Android WebView.
+  Granja (MIT): the research and the code that make Alabaster Dawn run in an Android WebView. The game
+  host in this app is its code; see `NOTICE.md`.
 - [JavaSteam](https://github.com/Longi94/JavaSteam): the Steam client library.
 - **Alabaster Dawn** © [Radical Fish Games](https://www.radicalfishgames.com/). Go buy it.
 

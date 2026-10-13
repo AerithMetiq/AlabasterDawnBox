@@ -11,3 +11,7 @@ captures/
 keystore.properties
 *.jks
 *.keystore
+
+# Things copied off a device for debugging. Screenshots show game art, which must never be committed.
+/Screenshot_*.png
+/ada-diagnostics*.log

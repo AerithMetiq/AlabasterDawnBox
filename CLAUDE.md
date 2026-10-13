@@ -29,8 +29,10 @@ Package / applicationId: `io.github.aerithmetiq.alabasterdroid`. MIT licensed.
 ## Hard rules
 
 1. **No game files in the repo or APK.** No Alabaster Dawn art, audio, data, code or fonts, from any
-   source. The launcher's background art is read at runtime from the user's downloaded copy
-   (`GameFiles.titleArt`). The app icon and wordmark are original.
+   source. The launcher's backdrop and title image are read at runtime from the user's
+   downloaded copy (`GameFiles.titleBackground` = `title-color-01.png`, `titleName` =
+   `title-name-01.png`, which replaces the "ALABASTER / DROID" wordmark while it is shown). The app icon and the fallback wordmark are
+   original; game art can never be the installed app's icon, because an icon ships inside the APK.
 2. **CrossDroid** (github.com/dain98/CrossDroid) declares no license, but **dain98 has given permission
    to use its code base**. Its code, layouts, images and look may be reused. Every reuse is listed in
    `NOTICE.md`, credited to dain98 and marked as used with permission; `README.md` and `NOTICE.md` say
@@ -51,12 +53,13 @@ Package / applicationId: `io.github.aerithmetiq.alabasterdroid`. MIT licensed.
 | Milestone | Scope | State |
 |---|---|---|
 | 1 | Launcher UI, Steam sign-in (password + Steam Guard, QR), encrypted login, profile/avatar, Settings, Steam diagnostics | done; sign-in and diagnostics confirmed on the Retroid Pocket Nova (2026-10-12) |
-| 2 | Download Alabaster Dawn's `terra/` from Steam into `GameFiles.root` with progress | written (awaiting device test) |
-| 3 | Game host: WebView, Node/NW.js shim, shader/bundle rewrites, gamepad bridge (from alabaster-android) | planned |
+| 2 | Download Alabaster Dawn's `terra/` from Steam into `GameFiles.root` with progress | done; download confirmed on the Retroid Pocket Nova (2026-10-12) |
+| 3 | Game host: WebView, Node/NW.js shim, shader/bundle rewrites, gamepad bridge (from alabaster-android) | done; the game runs on the Retroid Pocket Nova (2026-10-12) |
 | 4 | Steam Cloud saves: pull on PLAY, push on quit, conflict handling, offline mode | planned |
 
 The main button reads DOWNLOAD while the game is not installed and CANCEL with the percentage during a
-download; once installed it reads PLAY and only reports that milestone 3 is missing.
+download; once installed it reads PLAY and starts `host.GameActivity`. Saves are local only until
+milestone 4: a first PLAY starts with no save, even if the account has saves in Steam Cloud.
 
 **What the device's diagnostics report showed (2026-10-12, public build 25724722):**
 
@@ -86,6 +89,9 @@ app/src/main/java/io/github/aerithmetiq/alabasterdroid/
   steam/ProbeReport.kt    pure formatting of probe data (unit-tested)
   steam/GameDownload.kt   pure download decisions: depot order, where terra/ is, wanted files (unit-tested)
   steam/GameDownloader.kt downloads terra/ over JavaSteam's CDN client, resumable, verified
+  host/                   the game host, from alabaster-android (commit f1cedd5); see below
+  host/InProcessRenderer.kt  ours: keeps the page out of a 32-bit renderer process (see Performance)
+app/src/main/assets/ada-shim.js   alabaster-android's Node/NW.js shim (settings polled twice a second, not per frame)
 app/src/main/res/layout/activity_launcher.xml   the launcher layout
 ```
 
@@ -101,12 +107,115 @@ adb logcat -s AlabasterDroid        # the app's log tag
 Keep pure logic (parsing, sizing, decisions) in small Android-free functions with unit tests. Code that
 needs a device or Steam must be described to AerithMetiq as untested until they run it.
 
+## The game host (`host/`)
+
+Copied from alabaster-android rather than rewritten (hard rule 3). Keep it close to upstream so its
+later device fixes can be carried over file by file: change a file only when Alabaster Droid needs it
+to differ, and say what changed in the file's header and in `NOTICE.md`.
+
+- Verbatim apart from the package name: the shader rewrites (`ShaderSlots`, `ShaderArrays`,
+  `ShaderDither`, `ShaderVariants`, `RewriteCache`), `PortBridge`, `Gamepad*`, the
+  on-screen pad, `Diag*`, `LogFile`, `GameProfile` (its CrossCode entry is unused here) and the tests.
+- Adapted: `GameActivity` (upstream `PortActivity` minus the SAF folder pickers and entry screen; it
+  indexes `GameFiles.root` and launches the WebView), `GameIndex` (`GameTree.index` walks plain
+  files; `GameEntry.docId` is an absolute path), `GameAssetHandler` and `FsBridge` (read files, no
+  `SafStore`), `SideMenuView` (no game-selection row), `ShaderPrecision` (raises the light, fog and
+  combine shaders to highp as well as upstream's four GUI ones, after the array lift: game 0.2.0-7
+  has 35 mediump shaders, and at mediump the depth maths bands into horizontal streaks on Adreno.
+  Confirmed on the Nova: fog only, and fog + lights, left the streaks; adding `combine.frag` removed
+  them. Stages that share uniforms are always raised together, or the program does not link).
+- `GameActivity` acts on the Back **key** at every API level and drops a duplicate from the back
+  dispatcher. Upstream leaves API 33+ to the dispatcher, which the system only calls for apps opted
+  in to it; on Android 13 that left Back (and so the side menu) dead.
+- `GameActivity` runs in its own process (`:game`). Exit finishes the activity and then kills that
+  process, so the launcher resumes. Its preferences are the `ada` file, read only in that process.
+- Saves: `GameFiles.root/userdata/` is the engine's `/saves`, so files land in
+  `userdata/Saves/Default/…`, the Steam layout. Milestone 4 syncs `userdata/Saves/` with Steam Cloud.
+- The host logs under the tag `RfPort` (upstream's): `adb logcat -s AlabasterDroid RfPort`. In the
+  game, Back opens the side menu; Troubleshoot there shows and shares the diagnostics record, which is
+  also written to `userdata/` as a log file.
+
+## Performance: measured on the Retroid Pocket Nova (2026-10-12)
+
+At 960x540 in a busy area the game ran at 58-59 fps: about one dropped frame a second, in bursts.
+
+- **The limit is the page's single JavaScript thread, not the GPU.** GPU busy 35-39 %
+  (`/sys/class/kgsl/kgsl-3d0/gpubusy`, one read = busy/total), CPU cores at max frequency, battery
+  27 °C. The engine's `requestAnimationFrame` callback took 12.4-14.5 ms (p50) of the 16.7 ms frame,
+  p99 16-19 ms; garbage collection was negligible. It runs on a 2.8 GHz core, not the prime core,
+  and an app cannot pin another process's thread.
+- **The host's own overhead was part of it.** The shim made four synchronous `PortBridge` calls per
+  frame (gamepad, frame-rate cap, picture position, stats switch). A/B by live patch, twice: 14.6 ms
+  per frame with all four, 13.0-13.6 ms with only the gamepad call; frames over 16 ms fell from
+  61-85 to 6-21 per 8 s. The shim now reads the three settings every 30th poll. The remaining
+  per-frame call is `getGamepadJson` (it also feeds the watchdog's "engine silent" clock).
+- **After that fix (installed build, same day):** 58.4-59.7 fps over 20 s windows, 3-9 dropped
+  frames each. JavaScript per frame 12.0-12.3 ms mean. The drops that remain are frames where the
+  callback's wall time is 20-25 ms but its CPU time is about 10 ms: the thread is runnable and
+  waiting for a core. `/proc/<renderer pid>/task/<CrRendererMain tid>/schedstat` showed it waiting
+  5-16 % of the time (50-160 ms per second) although the system was about 60 % idle. The renderer
+  is an isolated process in the `top-app` cpuset; the app cannot set its threads' priority or
+  affinity. Then added, effect not yet measured: `android:appCategory="game"`, and the host's per-motion-event
+  `axes=` logging removed (the app's main thread ran at ~12 % of a core while a stick moved).
+- **Root cause found: on the Nova the WebView's renderer is a 32-bit process.** The firmware's
+  `com.android.webview` has `primaryCpuAbi=armeabi-v7a`, so `webview_zygote` is a child of the 32-bit
+  `zygote` and the sandboxed renderer, where the game's JavaScript runs, is 32-bit, although the app
+  itself is 64-bit. Two consequences, both measured:
+  1. Its threads may only use the cores that still run 32-bit code: `Cpus_allowed_list: 0-2,5-6`
+     (three little cores and the two Cortex-A710s). The two A715s and the prime X3 core are 64-bit
+     only; cpu7 stayed at 0 % busy. The main thread and the audio thread share cpu5-6, which is the
+     "waiting for a core" above. Extra load does not help: two busy workers halved the frame rate.
+  2. It runs out of address space. After about six minutes of play the renderer was at
+     `VmSize` 3.5 GB (`VmPeak` 3.68 GB) and the engine failed with `RESOURCE FAILURE: Couldn't decode
+     audio file 'media/audio/bgm/overworld-greens-normal.wav'` (`decodeAudioData`: unable to decode).
+  The game-category flag and removing the stick log changed nothing measurable (57-59 fps, waiting
+  10-14 %). An app cannot choose the renderer's bitness. Leads: single-process WebView
+  (`adb shell cmd webviewupdate disable-multiprocess`, device-wide, puts the renderer in the 64-bit
+  app process); a 64-bit WebView from a firmware update; or shipping a 64-bit engine in the app.
+- **Single-process WebView fixes it on the Nova (measured 2026-10-12).** After
+  `adb shell cmd webviewupdate disable-multiprocess` and an app restart, the page runs on
+  `Chrome_InProcRendererThread` inside the 64-bit `:game` process: mask `0-7`, no sandboxed process,
+  no 4 GB ceiling. Waiting-for-a-core fell from 10-14 % to 0.3-0.5 %, JavaScript per frame from
+  12-14.6 ms to 8.9-10 ms, and at **1920x1080** the game held 59.1-59.9 fps in most 20 s windows with
+  the GPU at 97-99 % (before: 45-55 fps at 720p and at 1080p). The limit is now the GPU, as
+  alabaster-android found on 64-bit WebViews. The setting is device-wide, removes the renderer
+  sandbox for every app's WebView, and is undone with `enable-multiprocess`; the app cannot set it.
+  Correction to an earlier guess: the engine does render the full 1920x1080 on this 1280x960
+  screen; it is not clamped to the window.
+- **The app now does this for itself: `host/InProcessRenderer.kt`** (our code, not upstream's).
+  When the app is 64-bit and the WebView package's library folder is a 32-bit ABI's, it removes
+  WebView's `webview-sandboxed-renderer` command-line switch before the engine starts, so only this
+  app's page runs in-process; the device-wide setting stays at its default. Release WebViews rename
+  their classes (`org.chromium.base.CommandLine` is `em` in 109.0.5414.123), so the class is found
+  by its shape among the package's default-package classes and accepted only if it reports that
+  switch as set. Verified on the Nova with multi-process enabled device-wide: the record says
+  `webView is 32-bit on a 64-bit app; renderer: in this process (em)`, there is no sandboxed
+  process, and the page thread's mask is `0-7`. Any failure leaves the page in the sandboxed
+  process as before; look for that record line first when a device reports poor performance.
+  Measured with it at 1920x1080: 58.7-59.8 fps over four 20 s windows, GPU 100 % busy, the page
+  thread waiting for a core 0.7 % of the time, boot in 6.1 s (8.5-11.3 s before).
+- **Do not test by suspending the game's AudioContext**: with audio suspended the frame rate fell to
+  47-50 fps, so the engine's pacing depends on the running audio clock and the comparison is void.
+  The WebAudio thread (`AudioOutputDevice`) itself uses 40-45 % of a core.
+- **How to measure** (debug builds have WebView inspection on): with the game running,
+  `adb forward tcp:9222 localabstract:webview_devtools_remote_$(adb shell pidof io.github.aerithmetiq.alabasterdroid:game)`,
+  then a CDP client on `http://127.0.0.1:9222/json`: `Tracing.start` (categories `devtools.timeline`,
+  `v8`, `toplevel`) and read the `FireAnimationFrame` durations on `CrRendererMain`; `Profiler` for
+  where the time goes. Count frames with `requestAnimationFrame` deltas, not an fps overlay. Compare
+  A/B in the same scene, alternating, because the scene changes the cost more than most fixes do.
+
 ## Environment
 
 - AerithMetiq's PC: **Bazzite (KDE)**, an immutable Fedora. Install CLI tools with Homebrew (`brew`), not
   `dnf`. Android Studio is the **Flathub** build (sandboxed); its Gradle JDK is set to 21.
 - Devices are reached with **adb over Wi-Fi** (wireless debugging). If adb reports more than one device,
   use `adb -s <serial>` or `export ANDROID_SERIAL=<serial>`.
+- The **Retroid Pocket Nova** (Android 13, Adreno 740, 1280x960 4:3 screen) ships the AOSP WebView
+  `com.android.webview` **109** and it cannot be updated or switched (checked 2026-10-12).
+  alabaster-android was measured on WebView 153, so anything the host needs must work on 109. The 16:9
+  game fills a 1280x720 strip of that screen. Its WebView is also **32-bit**, which cripples the
+  game unless the page runs in the app's own 64-bit process, which `InProcessRenderer` arranges
+  (see Performance).
 - Toolchain: AGP 8.13.2, Kotlin 2.2.10, Gradle 8.14.3, compileSdk/targetSdk 36, minSdk 26, Java 17 target.
   targetSdk 36 means edge-to-edge on Android 15+: screens use `fitsSystemWindows`.
 

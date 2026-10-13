@@ -36,18 +36,56 @@ non-commercial project, not affiliated with, sponsored by or endorsed by Radical
   Lasse Collin and contributors. Unpacks the game files Steam sends.
 * **ZXing** (`com.google.zxing:core`, https://github.com/zxing/zxing): Apache License 2.0, © ZXing
   authors. Draws the sign-in QR code.
-* **AndroidX** (AppCompat, Core) and **Material Components for Android**: Apache License 2.0, © The
+* **Material Symbols** (the in-game menu's icons, `app/src/main/res/drawable/ic_menu_*.xml`, taken
+  from alabaster-android): Apache License 2.0, © Google LLC. https://fonts.google.com/icons
+* **AndroidX** (AppCompat, Core, WebKit) and **Material Components for Android**: Apache License 2.0, © The
   Android Open Source Project / Google LLC.
 * **Gradle wrapper** (`gradle/wrapper/`, `gradlew*`, used to build): Apache License 2.0, © Gradle, Inc.
 
 Apache License 2.0 text: https://www.apache.org/licenses/LICENSE-2.0
 
-## Prior art
+## Code from alabaster-android
 
-* **RadicalFish Ports / alabaster-android** (https://github.com/moronigranja/alabaster-android): MIT
-  License, © 2026 Moroni Granja. The research that makes Alabaster Dawn run in an Android WebView (its
-  Node/NW.js shim and the shader fixes mobile GPUs need). When this project includes code from it, that
-  code keeps its copyright notice and is listed here.
+The part of this app that runs the game is **RadicalFish Ports / alabaster-android**
+(https://github.com/moronigranja/alabaster-android, commit `f1cedd5`): MIT License, Copyright (c) 2026
+Moroni Granja. It is the research and code that make Alabaster Dawn run in an Android WebView: the
+Node/NW.js shim, the shader and bundle fixes mobile GPUs need, controller input, the on-screen pad,
+the in-game menu and the diagnostics record.
+
+Reused, each file carrying that notice at its top:
+
+* `app/src/main/assets/ada-shim.js`, with one change: the side menu's three settings are read from
+  the app twice a second instead of on every frame, which was costing frames.
+* Everything in `app/src/main/java/io/github/aerithmetiq/alabasterdroid/host/`, and its unit tests in
+  `app/src/test/java/io/github/aerithmetiq/alabasterdroid/host/`. Most files differ only in their
+  package name. Adapted: `GameActivity.kt` (alabaster-android's `PortActivity` without its folder
+  pickers and two-game entry screen), `GameIndex.kt`, `GameAssetHandler.kt` and `FsBridge.kt` (the
+  game and saves are plain files here, not folders picked through Android's storage framework), 
+  `SideMenuView.kt` (no game-selection row) and `ShaderPrecision.kt` (the light, fog and combine
+  shaders are served at high precision as well as the GUI's). `GameActivity.kt` also acts on the Back
+  key at every Android version and leaves out the per-movement stick log. Each says so in its header.
+* The in-game menu's icons (`ic_menu_*.xml`).
+
+`host/InProcessRenderer.kt` and its test are this project's own and are not from alabaster-android.
+
+The MIT License that covers that code:
+
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+> associated documentation files (the "Software"), to deal in the Software without restriction,
+> including without limitation the rights to use, copy, modify, merge, publish, distribute,
+> sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or
+> substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+> NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+> NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+> OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+> CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## Prior art
 * **CrossDroid** (https://github.com/dain98/CrossDroid): the Steam-launcher design this app's look
   follows (dark two-column launcher, Steam sign-in, Steam Cloud saves) for CrossCode. CrossDroid declares
   no license, so **no code or assets were taken from it**; this app is an independent implementation on
