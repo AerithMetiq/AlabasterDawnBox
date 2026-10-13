@@ -8,7 +8,9 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.CheckBox
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import io.github.aerithmetiq.alabasterdroid.steam.SaveBackups
 import io.github.aerithmetiq.alabasterdroid.steam.CloudSaves
 import io.github.aerithmetiq.alabasterdroid.steam.CloudSync
 import io.github.aerithmetiq.alabasterdroid.steam.LoginStore
@@ -52,6 +54,7 @@ class CloudSavesActivity : AppCompatActivity() {
         val check = Screens.primary(ctx, "Check now (changes nothing)") { start() }
         val share = Screens.outlined(ctx, "Share") { share() }
         val back = Screens.outlined(ctx, "Back") { finish() }
+        val restore = Screens.outlined(ctx, "Restore a backup") { chooseBackup() }
         setContentView(Screens.page(ctx) {
             addView(Screens.title(ctx, "Steam Cloud saves"))
             addView(
@@ -75,6 +78,15 @@ class CloudSavesActivity : AppCompatActivity() {
             addView(Screens.row(ctx, 12, check, share, back))
             addView(status)
             addView(report)
+            addView(
+                Screens.body(
+                    ctx,
+                    "Backups: before a sync (or a restore) replaces save files on this device, it copies " +
+                        "them to SaveBackups. Restoring puts those files back; nothing is sent to Steam until the next sync.",
+                    topDp = 20,
+                )
+            )
+            addView(Screens.row(ctx, 8, restore))
         })
         Screens.goldStatusBar(this)
         check.post { check.requestFocus() }
@@ -95,12 +107,8 @@ class CloudSavesActivity : AppCompatActivity() {
         }
         status.text = "Connecting to Steam…"
         Thread({
-            val s = SteamSession()
-            session = s
             try {
-                s.connect()
-                ui { status.text = "Logging on…" }
-                s.logOn(login)
+                val s = SteamSession.open(SteamSession.Purpose.SAVES, login) { session = it }
                 ui { status.text = "Comparing this device's saves with Steam Cloud…" }
                 val sync = CloudSync(
                     SteamCloudFiles(s, SteamGame.ALABASTER_DAWN.appId),
@@ -124,10 +132,45 @@ class CloudSavesActivity : AppCompatActivity() {
                     ui { status.text = "Stopped: ${SteamProbe.describe(e)}" }
                 }
             } finally {
-                s.close()
+                session?.close()
                 session = null
             }
         }, "cloud-check").start()
+    }
+
+    /** Lists the local save backups, newest first, and puts the chosen one back after a confirmation. */
+    private fun chooseBackup() {
+        val saves = GameFiles.saves(this)
+        val folder = GameFiles.saveBackups(this)
+        val backups = SaveBackups.list(folder)
+        if (backups.isEmpty()) {
+            status.text = "There are no save backups on this device yet."
+            return
+        }
+        val labels = backups.map { "${it.label}  ·  ${it.files.size} ${if (it.files.size == 1) "file" else "files"}" }
+        AlertDialog.Builder(this)
+            .setTitle("Restore which backup?")
+            .setItems(labels.toTypedArray()) { _, which ->
+                val chosen = backups[which]
+                AlertDialog.Builder(this)
+                    .setTitle("Restore the backup of ${chosen.label}?")
+                    .setMessage(
+                        "These save files are put back:\n\n" + chosen.files.joinToString("\n") +
+                            "\n\nThe files they replace are backed up first, so this can be undone. " +
+                            "At the next PLAY the sync treats them as changed on this device."
+                    )
+                    .setPositiveButton("Restore") { _, _ ->
+                        val n = runCatching { SaveBackups.restore(saves, folder, chosen.name) }
+                        status.text = n.fold(
+                            { "Restored $it save ${if (it == 1) "file" else "files"} from ${chosen.label}." },
+                            { "Could not restore: ${SteamProbe.describe(it)}" },
+                        )
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun header(uploads: Boolean): List<String> = listOf(

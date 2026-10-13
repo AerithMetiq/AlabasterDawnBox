@@ -2,9 +2,6 @@ package io.github.aerithmetiq.alabasterdroid.steam
 
 import java.io.File
 import java.io.IOException
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /**
  * Syncs the device's save folder with Alabaster Dawn's Steam Cloud files. The decisions are
@@ -38,7 +35,7 @@ class CloudSync(
     )
 
     fun check(): Check {
-        val base = runCatching { CloudSaves.parseBase(baseFile.readText()) }.getOrDefault(emptyMap())
+        val base = base(baseFile)
         val there = cloud.list().mapNotNull { f -> CloudSaves.relative(f.name)?.let { f.copy(name = it) } }
         return Check(CloudSaves.plan(local(saves), there, base), base)
     }
@@ -66,7 +63,7 @@ class CloudSync(
         }
         val removals = steps.filter { it.action == SaveAction.REMOVE_LOCAL }
         if (fetched.isNotEmpty() || removals.isNotEmpty()) {
-            val backup = File(backups, STAMP.format(LocalDateTime.now()))
+            val backup = File(backups, SaveBackups.stamp())
             for ((s, bytes) in fetched) {
                 val target = File(saves, s.name)
                 if (target.isFile) target.copyTo(File(backup, s.name), overwrite = true)
@@ -79,7 +76,7 @@ class CloudSync(
                 target.copyTo(File(backup, s.name), overwrite = true)
                 if (target.delete()) done.add(s.name)
             }
-            prune()
+            SaveBackups.prune(backups)
         }
         /* This device is now up to date; record that before anything is sent. */
         saveBase(CloudSaves.newBase(check.base, steps, done, keptLocal))
@@ -112,12 +109,6 @@ class CloudSync(
         writeAtomically(baseFile, CloudSaves.formatBase(base).toByteArray())
     }
 
-    /** Keeps the newest [KEEP_BACKUPS] backup folders; their names sort by time. */
-    private fun prune() {
-        backups.listFiles { f -> f.isDirectory }?.sortedByDescending { it.name }?.drop(KEEP_BACKUPS)
-            ?.forEach { it.deleteRecursively() }
-    }
-
     /** Through a temp file and a rename, so a crash mid-write cannot leave half a save. */
     private fun writeAtomically(target: File, bytes: ByteArray) {
         target.parentFile?.mkdirs()
@@ -130,8 +121,9 @@ class CloudSync(
     }
 
     companion object {
-        private const val KEEP_BACKUPS = 5
-        private val STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss", Locale.US)
+        /** The checksums of the last sync, or none when there has not been one. */
+        fun base(baseFile: File): Map<String, String> =
+            runCatching { CloudSaves.parseBase(baseFile.readText()) }.getOrDefault(emptyMap())
 
         /**
          * The save files on this device. Empty files are left out: a zero-byte save is a write that

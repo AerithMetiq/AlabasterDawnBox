@@ -56,10 +56,49 @@ Package / applicationId: `io.github.aerithmetiq.alabasterdroid`. MIT licensed.
 | 1 | Launcher UI, Steam sign-in (password + Steam Guard, QR), encrypted login, profile/avatar, Settings, Steam diagnostics | done; sign-in and diagnostics confirmed on the Retroid Pocket Nova (2026-10-12) |
 | 2 | Download Alabaster Dawn's `terra/` from Steam into `GameFiles.root` with progress | done; download confirmed on the Retroid Pocket Nova (2026-10-12) |
 | 3 | Game host: WebView, Node/NW.js shim, shader/bundle rewrites, gamepad bridge (from alabaster-android) | done; the game runs on the Retroid Pocket Nova (2026-10-12) |
-| 4 | Steam Cloud saves: pull on PLAY, push on quit, conflict handling, offline mode | written 2026-10-12, unit-tested. On the Nova the same day: a first PLAY asked about the conflict, downloaded all 9 Cloud files (checksums matched), backed up the 8 local ones and started the game. **Not yet run: an upload, the sync after leaving the game, the Check now screen** |
+| 4 | Steam Cloud saves: pull on PLAY, push on quit, conflict handling, offline mode | written 2026-10-12, unit-tested. On the Nova the same day: a first PLAY asked about the conflict, downloaded all 9 Cloud files (checksums matched), backed up the 8 local ones and started the game. AerithMetiq then turned uploads on and reported the upload worked |
 
-The main button reads DOWNLOAD while the game is not installed and CANCEL with the percentage during a
-download; once installed it reads PLAY, which syncs the saves and then starts `host.GameActivity`.
+The main button reads DOWNLOAD while the game is not installed and CANCEL during a download (the
+percentage is in the status line and the bar below, not on the button); once installed it reads PLAY, which syncs the saves and then starts `host.GameActivity`.
+
+**Added after milestone 4 (2026-10-12; unit-tested).** Run on the Nova the same day: verify game
+files, PLAY with sync, the sync status line, the launcher's Resolution setting reaching the shim, the
+restore list, and the launcher's Game settings. Not yet run: an actual update (needs a new build on
+Steam), a real restore, delete game files, a download left in the background, the playing status.
+
+- **Background download** (`GameDownloadService`, a `dataSync` foreground service with a progress
+  notification and a Cancel action; wake and Wi-Fi locks). The launcher only mirrors
+  `GameDownloadState`. One run downloads, resumes, updates or verifies: the downloader hashes every
+  file against the manifest. Settings → "Verify game files" starts the same run.
+- **Game updates**: the launcher's start-up logon also reads the public build id
+  (`steamPublicBuild`, read-only) into `GameFiles.steamBuild`; when it differs from the marker's
+  `build=`, the button reads UPDATE and asks "Update now / Play this version". An update removes
+  the marker first, so a cancelled update leaves the game not playable until it is finished.
+- **Delete game files** (Settings): removes `terra/` and the marker; saves, backups, settings stay.
+- **A logon answered `TryAnotherCM`/busy is retried on a fresh connection** (`SteamSession.open`,
+  up to three times). Seen on the Nova: the first verify failed with it and the next press worked.
+- **Steam sessions have a purpose** (`SteamSession.Purpose`), which sets the `loginID`: sessions
+  that can overlap (profile refresh, download, save sync, playing status, diagnostics) each have
+  their own id, so one does not replace another. Nothing waits for the profile refresh any more.
+- **Playing status** (`PlayingService`, `SteamSession.showPlaying`): **writes to Steam**, off by
+  default (`GameFiles.playingStatus`, Settings). Started with the game when it starts online,
+  stopped in the launcher's `onResume`. Sets the persona Online and sends `notifyGamesPlayed`.
+  Confirmed on the Nova (2026-10-12): after the two calls Steam pushes the account's own status as
+  `Online, game 3110760`, which the service logs (`adb logcat -s AlabasterDroid | grep "playing status"`).
+  Trust those pushes, not `requestFriendInfo` on oneself: its answer said `Offline, game 0` seconds
+  after a push said otherwise, which cost an hour of looking for a bug that was not there.
+- **Save backups can be restored** (`steam/SaveBackups.kt`, Settings → Steam Cloud saves →
+  "Restore a backup"). A backup holds only the files a sync replaced, not a full snapshot; a
+  restore backs up what it replaces. Newest 8 folders are kept.
+- **Sync status line** under PLAY (`CloudSaves.syncStatus`): time of the last sync that reached
+  Steam (`GameFiles.lastSync`) and how many local save files differ from the base (computed
+  locally, no network).
+- **Resolution from the launcher** (Settings → Game): the option lives in the page's
+  `localStorage["xg_local_options"]["pixel-size"]` (a rung index, 0-4; the launcher offers the same five
+  sizes the game's options do), which only the page can
+  write. The launcher stores the chosen rung (`GameSettings.KEY_RESOLUTION_NEXT`), the next start
+  passes it once as `?adaPixelSize=N`, and the shim stores it before the engine boots. The last
+  resolution the engine reported is kept (`KEY_RESOLUTION_LAST`) for the launcher to show.
 
 **Steam Cloud saves (milestone 4), how it works:**
 
@@ -68,9 +107,10 @@ download; once installed it reads PLAY, which syncs the saves and then starts `h
   (`GameFiles.syncBase`, `cloud-sync.txt`). Only one side changed: that side wins. Both changed, or
   different files with no base (a first sync): a conflict, and the user picks one side for all files.
 - PLAY (unless "Play offline" is ticked) runs `LauncherActivity.syncSaves`: downloads first, each
-  replaced local file copied to `SaveBackups/<time>/` (newest 5 kept), then uploads, then the game.
+  replaced local file copied to `SaveBackups/<time>/` (newest 8 kept), then uploads, then the game.
   Steam unreachable: the game starts with the local saves. A failed download: nothing is changed and
   the game does not start.
+- Sessions for saves use `SteamSession.Purpose.SAVES`.
 - Coming back from the game (launcher `onResume`, flag `syncAfterGame` in the `launcher` preferences,
   so it survives the launcher being stopped) runs the sync again to upload.
 - **Uploads are off by default** (hard rule 5): `GameFiles.cloudUploads`, switched in Settings →
@@ -101,7 +141,7 @@ download; once installed it reads PLAY, which syncs the saves and then starts `h
 ```
 app/src/main/java/io/github/aerithmetiq/alabasterdroid/
   LauncherActivity.kt     home screen: sign-in, PLAY, offline toggle, profile refresh
-  SettingsActivity.kt     diagnostics entry, open-source notices, about
+  SettingsActivity.kt     game settings, Steam Cloud saves and diagnostics entries, notices, about
   SteamProbeActivity.kt   read-only Steam diagnostics using the saved login
   Screens.kt              shared programmatic UI pieces for secondary screens
   QrCode.kt               QR dialog sizing (fits any aspect ratio) + bitmap
@@ -115,10 +155,14 @@ app/src/main/java/io/github/aerithmetiq/alabasterdroid/
   steam/CloudSaves.kt     pure save-sync decisions: Cloud names, the three-way plan, wording (unit-tested)
   steam/CloudSync.kt      reads both sides and carries a plan out: downloads, backups, uploads
   steam/SteamCloudFiles.kt  list / download / upload one app's Cloud files (adapted from CrossDroid)
-  CloudSavesActivity.kt   Settings → Steam Cloud saves: the uploads switch and the dry-run check
+  CloudSavesActivity.kt   Settings → Steam Cloud saves: the uploads switch, the dry-run check, restore a backup
+  steam/SaveBackups.kt    local save backups: list, restore, prune (unit-tested)
+  GameDownloadService.kt  the download as a foreground service, and GameDownloadState for the launcher
+  PlayingService.kt       shows the account as playing on Steam while the game runs (opt-in)
+  host/GameSettings.kt    ours: the game's settings keys, shared by the launcher and the game process
   host/                   the game host, from alabaster-android (commit f1cedd5); see below
   host/InProcessRenderer.kt  ours: keeps the page out of a 32-bit renderer process (see Performance)
-app/src/main/assets/ada-shim.js   alabaster-android's Node/NW.js shim (settings polled twice a second, not per frame)
+app/src/main/assets/ada-shim.js   alabaster-android's Node/NW.js shim (settings polled twice a second, not per frame; frame gate keeps a running deadline)
 app/src/main/res/layout/activity_launcher.xml   the launcher layout
 ```
 
@@ -146,7 +190,8 @@ to differ, and say what changed in the file's header and in `NOTICE.md`.
 - Adapted: `GameActivity` (upstream `PortActivity` minus the SAF folder pickers and entry screen; it
   indexes `GameFiles.root` and launches the WebView), `GameIndex` (`GameTree.index` walks plain
   files; `GameEntry.docId` is an absolute path), `GameAssetHandler` and `FsBridge` (read files, no
-  `SafStore`), `SideMenuView` (no game-selection row), `ShaderPrecision` (raises the light, fog and
+  `SafStore`), `SideMenuView` (no game-selection row; controller selection), `FpsLimit` and its test
+  (see below), `ShaderPrecision` (raises the light, fog and
   combine shaders to highp as well as upstream's four GUI ones, after the array lift: game 0.2.0-7
   has 35 mediump shaders, and at mediump the depth maths bands into horizontal streaks on Adreno.
   Confirmed on the Nova: fog only, and fog + lights, left the streaks; adding `combine.frag` removed
@@ -154,8 +199,28 @@ to differ, and say what changed in the file's header and in `NOTICE.md`.
 - `GameActivity` acts on the Back **key** at every API level and drops a duplicate from the back
   dispatcher. Upstream leaves API 33+ to the dispatcher, which the system only calls for apps opted
   in to it; on Android 13 that left Back (and so the side menu) dead.
+- **The side menu pauses the game and takes the controller** (ours, written 2026-10-12; AerithMetiq
+  confirmed it and the new frame-rate caps on the Nova). `openMenu` blurs the page (the engine's own pause) and `setPageFocus(true)`
+  is refused while the menu is open. Nothing in the menu takes view focus, so the selection is
+  `SideMenuView`'s own: `GameActivity.menuKey` / `menuMotion` hand it D-pad, stick, A and B
+  (`padKey`); B acts on release so the game does not resume with B held.
+- **Frame-rate caps are 30/45/60/90/120** (`FpsLimit`, changed from upstream's 20/30/40/45/60). The
+  menu only offers the rates the screen can show (`choicesFor`), and
+  `applyRefreshRate` asks for the lowest refresh rate the cap divides evenly (`refreshFor`). The
+  shim's gate keeps a running deadline, so 45 on 60 Hz averages 45 (three vsyncs of four) instead
+  of upstream's drop to 30. The cap is read on the engine's poll, so a change made in the menu
+  lands when the game resumes. Unknown: whether the engine draws anything new above 60 fps (its
+  logic was measured upstream as a 60 Hz fixed step); 90/120 need a 90/120 Hz screen to check.
+- **Game settings are shared with the launcher** (`host/GameSettings.kt`, ours; written 2026-10-12,
+  **not yet run on a device**). The keys live there; the launcher's Settings screen has a "Game"
+  section that edits the same `ada` preferences file the side menu does. Two processes read that
+  file, so both open it through `GameSettings.prefs` (`MODE_MULTI_PROCESS`, which re-reads a file
+  the other process wrote) and the launcher writes with `commit`. New keys go in `GameSettings`.
+- **"Touch controls" switch** (`touch_controls`, ours): off removes the whole on-screen overlay,
+  its PAD/EDIT buttons included (`OnScreenPadView.touchControls`). Upstream's `on_screen_pad` only
+  hides the controls and leaves those buttons.
 - `GameActivity` runs in its own process (`:game`). Exit finishes the activity and then kills that
-  process, so the launcher resumes. Its preferences are the `ada` file, read only in that process.
+  process, so the launcher resumes.
 - Saves: `GameFiles.root/userdata/` is the engine's `/saves`, so files land in
   `userdata/Saves/Default/…`, the Steam layout. The launcher syncs `userdata/Saves/`
   (`GameFiles.saves`) with Steam Cloud, only while the game's process is not running.
@@ -238,6 +303,9 @@ At 960x540 in a busy area the game ran at 58-59 fps: about one dropped frame a s
   `dnf`. Android Studio is the **Flathub** build (sandboxed); its Gradle JDK is set to 21.
 - Devices are reached with **adb over Wi-Fi** (wireless debugging). If adb reports more than one device,
   use `adb -s <serial>` or `export ANDROID_SERIAL=<serial>`.
+- The Nova's screen has **60 Hz and 120 Hz modes** (`dumpsys display`); which one is active is a
+  system setting, and the performance numbers below were taken at 60. With the game asking for
+  120 Hz and a 90 cap, the title screen read 91 fps at 1280x720.
 - The **Retroid Pocket Nova** (Android 13, Adreno 740, 1280x960 4:3 screen) ships the AOSP WebView
   `com.android.webview` **109** and it cannot be updated or switched (checked 2026-10-12).
   alabaster-android was measured on WebView 153, so anything the host needs must work on 109. The 16:9

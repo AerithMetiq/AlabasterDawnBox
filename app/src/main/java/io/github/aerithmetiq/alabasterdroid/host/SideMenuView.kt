@@ -1,7 +1,10 @@
 /*
  * From alabaster-android (https://github.com/moronigranja/alabaster-android), commit f1cedd5.
  * MIT License, Copyright (c) 2026 Moroni Granja. Changed: the package name, the R import, and the "Game selection" row is left out
- * (Alabaster Droid runs one game; Exit returns to its launcher).
+ * (Alabaster Droid runs one game; Exit returns to its launcher). Also Alabaster Droid's: the menu is
+ * driven by a controller ([padKey], the selection ring), and the rate slider shows the rates the
+ * screen can do ([fpsChoices]), and the "Touch controls" switch. A fix: a tapped switch keeps its value
+ * when another switch redraws the panel (see [syncing]).
  */
 package io.github.aerithmetiq.alabasterdroid.host
 
@@ -16,6 +19,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.text.TextUtils
+import android.view.KeyEvent
 import android.view.Gravity
 import android.view.View
 import android.view.View.MeasureSpec
@@ -43,8 +47,29 @@ import android.widget.TextView
  * nothing inside it may take view focus: the engine stops its loop and suspends audio on the page's
  * `blur` (see PortActivity.setPageFocus), so the descendants are made unfocusable and the WebView
  * keeps focus while the panel is open — including the slider, which is dragged, not focused.
+ *
+ * Alabaster Droid: the game is paused while the panel is open, and a controller drives the panel.
+ * Because nothing here takes view focus, the selection is the view's own: the activity hands it the
+ * controller's keys ([padKey]) and the selected row wears a ring.
  */
-class SideMenuView(context: Context, private val viewAlignSupported: Boolean = true) : FrameLayout(context) {
+class SideMenuView(
+    context: Context,
+    private val viewAlignSupported: Boolean = true,
+    /** The rates the slider offers: the ones this screen can show (see [FpsLimit.choicesFor]). */
+    private val fpsChoices: List<Int> = FpsLimit.CHOICES,
+) : FrameLayout(context) {
+
+    /**
+     * One stop for the controller: a row ([activate] is its tap) or the rate slider ([adjust] moves
+     * it by a step). A stop whose view is hidden is skipped.
+     */
+    private class Stop(val view: View, val activate: (() -> Unit)?, val adjust: ((Int) -> Unit)?)
+
+    private val stops = ArrayList<Stop>()
+    private var selected = 0
+
+    /** A tap on the touch-controls switch. */
+    var onTouchControls: ((Boolean) -> Unit)? = null
 
     /** A tap on the overlay switch (never fired by [setHideWithExternalInput]). */
     var onHideWithExternalInput: ((Boolean) -> Unit)? = null
@@ -79,6 +104,7 @@ class SideMenuView(context: Context, private val viewAlignSupported: Boolean = t
     /** A tap on the scrim; the owner closes the panel, because it owns the WebView re-focus. */
     var onScrimTap: (() -> Unit)? = null
 
+    private val touchToggle = Switch(context)
     private val hideToggle = Switch(context)
     private val dynamicToggle = Switch(context)
     private val statsToggle = Switch(context)
@@ -103,13 +129,21 @@ class SideMenuView(context: Context, private val viewAlignSupported: Boolean = t
     private val savesStatus = TextView(context)
     private val engineStatus = TextView(context)
 
-    /** True while [sync] assigns the widget state, so a programmatic set fires no callback. */
+    /**
+     * True while [sync] assigns the widget state, so a programmatic set fires no callback.
+     *
+     * Alabaster Droid: a tap also records the new value in this view's own copy before it reports
+     * it. alabaster-android left the copy to the owner, which only sets some of them back; the next
+     * [sync] (any switch that calls one, such as the frame-rate switch) then redrew the others from
+     * stale copies, so switches that had been turned off showed on again.
+     */
     private var syncing = false
 
     /** The icon and control colour on a row, and the ripple the whole row shows. */
     private val rippleColor = ColorStateList.valueOf(PortStyle.RIPPLE)
     private val pillColor = PortStyle.PILL
 
+    private var touchControls = true
     private var hideWithExternalInput = true
     private var dynamicSticks = true
     private var statsEnabled = false
@@ -124,9 +158,62 @@ class SideMenuView(context: Context, private val viewAlignSupported: Boolean = t
     fun open() {
         visibility = VISIBLE
         scroller.scrollTo(0, 0)
+        select(0)
+    }
+
+    /**
+     * A controller key while the panel is open: up and down move the selection, A (or Enter) taps the
+     * selected row, left and right move the rate slider when it is the selection. Returns whether the
+     * key meant something here.
+     */
+    fun padKey(keyCode: Int): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_UP -> move(-1)
+            KeyEvent.KEYCODE_DPAD_DOWN -> move(1)
+            KeyEvent.KEYCODE_DPAD_LEFT -> stops.getOrNull(selected)?.adjust?.invoke(-1)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> stops.getOrNull(selected)?.adjust?.invoke(1)
+            KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                stops.getOrNull(selected)?.activate?.invoke()
+                /* A switch can hide the slider under it; keep the ring on something visible. */
+                select(selected)
+            }
+            else -> return false
+        }
+        return true
+    }
+
+    private fun move(step: Int) {
+        var next = selected
+        do {
+            next += step
+        } while (next in stops.indices && !stops[next].view.isShown)
+        if (next in stops.indices) select(next)
+    }
+
+    private fun select(index: Int) {
+        var target = index.coerceIn(0, maxOf(0, stops.size - 1))
+        if (stops.getOrNull(target)?.view?.isShown == false) target = (target - 1).coerceAtLeast(0)
+        selected = target
+        for ((i, stop) in stops.withIndex()) stop.view.foreground = if (i == selected) selectionRing() else null
+        stops.getOrNull(selected)?.view?.let { v ->
+            v.post { v.requestRectangleOnScreen(android.graphics.Rect(0, 0, v.width, v.height), false) }
+        }
+    }
+
+    /** The launcher's focus ring, in the port's own text colour. */
+    private fun selectionRing(): Drawable = GradientDrawable().apply {
+        cornerRadius = dp(10).toFloat()
+        setColor(Color.TRANSPARENT)
+        setStroke(dp(2), PortStyle.TEXT)
     }
 
     fun close() { visibility = GONE }
+
+    fun setTouchControls(value: Boolean) {
+        touchControls = value
+        sync()
+    }
 
     fun setHideWithExternalInput(value: Boolean) {
         hideWithExternalInput = value
@@ -229,32 +316,60 @@ class SideMenuView(context: Context, private val viewAlignSupported: Boolean = t
             textSize = 18f
             setTextColor(PortStyle.TEXT)
         })
+        panel.addView(TextView(context).apply {
+            text = "Game paused · D-pad: move · A: select · B: resume"
+            textSize = 12f
+            setTextColor(PortStyle.DIM)
+            setPadding(0, dp(2), 0, dp(6))
+        })
+
+        touchToggle.setOnCheckedChangeListener { _, checked ->
+            if (!syncing) {
+                touchControls = checked
+                onTouchControls?.invoke(checked)
+            }
+        }
+        addRow(panel, R.drawable.ic_menu_pad, "Touch controls", touchToggle) {
+            touchToggle.isChecked = !touchToggle.isChecked
+        }
 
         hideToggle.setOnCheckedChangeListener { _, checked ->
-            if (!syncing) onHideWithExternalInput?.invoke(checked)
+            if (!syncing) {
+                hideWithExternalInput = checked
+                onHideWithExternalInput?.invoke(checked)
+            }
         }
         addRow(panel, R.drawable.ic_menu_pad, "Hide pad with external input", hideToggle) {
             hideToggle.isChecked = !hideToggle.isChecked
         }
 
         dynamicToggle.setOnCheckedChangeListener { _, checked ->
-            if (!syncing) onDynamicSticks?.invoke(checked)
+            if (!syncing) {
+                dynamicSticks = checked
+                onDynamicSticks?.invoke(checked)
+            }
         }
         addRow(panel, R.drawable.ic_menu_joystick, "Dynamic sticks (touch anywhere)", dynamicToggle) {
             dynamicToggle.isChecked = !dynamicToggle.isChecked
         }
 
         statsToggle.setOnCheckedChangeListener { _, checked ->
-            if (!syncing) onStatsEnabled?.invoke(checked)
+            if (!syncing) {
+                statsEnabled = checked
+                onStatsEnabled?.invoke(checked)
+            }
         }
         addRow(panel, R.drawable.ic_menu_stats, "Show FPS / battery / temp", statsToggle) {
             statsToggle.isChecked = !statsToggle.isChecked
         }
 
         fpsToggle.setOnCheckedChangeListener { _, checked ->
-            if (!syncing) onLimitFps?.invoke(checked)
+            if (!syncing) {
+                limitFps = checked
+                onLimitFps?.invoke(checked)
+            }
         }
-        addRow(panel, R.drawable.ic_menu_fps, "Limit the frame rate (battery)", fpsToggle) {
+        addRow(panel, R.drawable.ic_menu_fps, "Limit the frame rate", fpsToggle) {
             fpsToggle.isChecked = !fpsToggle.isChecked
         }
         /* The rate lives under the switch, and only while it is on: the cap is the switch's job, the
@@ -262,7 +377,10 @@ class SideMenuView(context: Context, private val viewAlignSupported: Boolean = t
         buildFpsSlider(panel)
 
         logToggle.setOnCheckedChangeListener { _, checked ->
-            if (!syncing) onLogToSaves?.invoke(checked)
+            if (!syncing) {
+                logToSaves = checked
+                onLogToSaves?.invoke(checked)
+            }
         }
         addRow(panel, R.drawable.ic_menu_log, "Keep a log with the saves", logToggle) {
             logToggle.isChecked = !logToggle.isChecked
@@ -323,7 +441,7 @@ class SideMenuView(context: Context, private val viewAlignSupported: Boolean = t
     }
 
     /**
-     * The rate slider, under the frame-rate switch: five positions ([FpsLimit.CHOICES]), their labels
+     * The rate slider, under the frame-rate switch: one position per rate in [fpsChoices], their labels
      * on the ticks below, and the chosen rate as a readout beside the bar so the value is readable
      * while the thumb is dragged.
      *
@@ -337,14 +455,17 @@ class SideMenuView(context: Context, private val viewAlignSupported: Boolean = t
     private fun buildFpsSlider(panel: LinearLayout) {
         val halfThumb = (fpsSlider.thumb?.intrinsicWidth ?: 0) / 2
         val readout = dp(56)
-        fpsSlider.max = FpsLimit.CHOICES.size - 1
+        fpsSlider.max = fpsChoices.size - 1
         fpsSlider.isFocusable = false
         fpsSlider.setPadding(halfThumb, 0, halfThumb, 0)
         fpsSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
-                val fps = FpsLimit.at(progress)
+                val fps = FpsLimit.at(progress, fpsChoices)
                 fpsValue.text = "$fps fps"
-                if (fromUser && !syncing) onFpsLimit?.invoke(fps)
+                if (fromUser && !syncing) {
+                    fpsLimit = fps
+                    onFpsLimit?.invoke(fps)
+                }
             }
 
             override fun onStartTrackingTouch(bar: SeekBar) = Unit
@@ -377,6 +498,12 @@ class SideMenuView(context: Context, private val viewAlignSupported: Boolean = t
             addView(line, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(fpsTicks, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
+        /* With a controller the slider is a stop of its own: left and right step the rate. */
+        stops.add(Stop(fpsSliderGroup, null) { step ->
+            val index = (FpsLimit.indexOf(fpsLimit, fpsChoices) + step).coerceIn(0, fpsChoices.size - 1)
+            val fps = FpsLimit.at(index, fpsChoices)
+            if (fps != fpsLimit) onFpsLimit?.invoke(fps)
+        })
         panel.addView(
             fpsSliderGroup,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -409,10 +536,10 @@ class SideMenuView(context: Context, private val viewAlignSupported: Boolean = t
         }
 
         override fun onDraw(canvas: Canvas) {
-            val last = FpsLimit.CHOICES.size - 1
+            val last = maxOf(1, fpsChoices.size - 1)
             val travel = (width - paddingLeft - paddingRight).toFloat()
             val baseline = -paint.fontMetrics.ascent
-            for ((index, fps) in FpsLimit.CHOICES.withIndex()) {
+            for ((index, fps) in fpsChoices.withIndex()) {
                 canvas.drawText(fps.toString(), paddingLeft + travel * index / last, baseline, paint)
             }
         }
@@ -477,6 +604,7 @@ class SideMenuView(context: Context, private val viewAlignSupported: Boolean = t
                 setOnClickListener { onClick() }
             }
         }
+        if (onClick != null) stops.add(Stop(row, onClick, null))
         panel.addView(
             row,
             LinearLayout.LayoutParams(
@@ -496,7 +624,12 @@ class SideMenuView(context: Context, private val viewAlignSupported: Boolean = t
         panel: LinearLayout, value: ViewAlign, label: String, iconRes: Int, last: Boolean,
     ) {
         val radio = RadioButton(context).apply {
-            setOnCheckedChangeListener { _, checked -> if (checked && !syncing) onAlign?.invoke(value) }
+            setOnCheckedChangeListener { _, checked ->
+                if (checked && !syncing) {
+                    align = value
+                    onAlign?.invoke(value)
+                }
+            }
         }
         radios[value] = radio
         radioRows[value] = addRow(panel, iconRes, label, radio, last) {
@@ -504,6 +637,7 @@ class SideMenuView(context: Context, private val viewAlignSupported: Boolean = t
              * there is no RadioGroup to uncheck the siblings. */
             for ((other, r) in radios) r.isChecked = other == value
             for ((other, r) in radioRows) r.background = rowBackground(other == value)
+            align = value
             onAlign?.invoke(value)
         }
     }
@@ -511,11 +645,12 @@ class SideMenuView(context: Context, private val viewAlignSupported: Boolean = t
     /** The only writer of the widget state; the listeners are muted across the assignment. */
     private fun sync() {
         syncing = true
+        touchToggle.isChecked = touchControls
         hideToggle.isChecked = hideWithExternalInput
         dynamicToggle.isChecked = dynamicSticks
         statsToggle.isChecked = statsEnabled
         fpsToggle.isChecked = limitFps
-        fpsSlider.progress = FpsLimit.indexOf(fpsLimit)
+        fpsSlider.progress = FpsLimit.indexOf(fpsLimit, fpsChoices)
         fpsValue.text = "$fpsLimit fps"
         fpsSliderGroup.visibility = if (limitFps) VISIBLE else GONE
         logToggle.isChecked = logToSaves

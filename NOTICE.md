@@ -54,19 +54,23 @@ the in-game menu and the diagnostics record.
 
 Reused, each file carrying that notice at its top:
 
-* `app/src/main/assets/ada-shim.js`, with one change: the side menu's three settings are read from
-  the app twice a second instead of on every frame, which was costing frames.
+* `app/src/main/assets/ada-shim.js`, with two changes: the side menu's three settings are read from
+  the app twice a second instead of on every frame, which was costing frames, and the frame-rate
+  limit keeps a running deadline so a rate the screen cannot divide evenly averages out.
 * Everything in `app/src/main/java/io/github/aerithmetiq/alabasterdroid/host/`, and its unit tests in
   `app/src/test/java/io/github/aerithmetiq/alabasterdroid/host/`. Most files differ only in their
   package name. Adapted: `GameActivity.kt` (alabaster-android's `PortActivity` without its folder
   pickers and two-game entry screen), `GameIndex.kt`, `GameAssetHandler.kt` and `FsBridge.kt` (the
   game and saves are plain files here, not folders picked through Android's storage framework), 
-  `SideMenuView.kt` (no game-selection row) and `ShaderPrecision.kt` (the light, fog and combine
+  `SideMenuView.kt` (no game-selection row; it can be driven by a controller; a "Touch controls"
+  switch), `OnScreenPadView.kt` (that switch), `FpsLimit.kt` and
+  its test (the rates are 30/45/60/90/120, limited to what the screen can show) and `ShaderPrecision.kt` (the light, fog and combine
   shaders are served at high precision as well as the GUI's). `GameActivity.kt` also acts on the Back
-  key at every Android version and leaves out the per-movement stick log. Each says so in its header.
+  key at every Android version, leaves out the per-movement stick log, pauses the game while the
+  side menu is open and gives the controller to the menu. Each says so in its header.
 * The in-game menu's icons (`ic_menu_*.xml`).
 
-`host/InProcessRenderer.kt` and its test are this project's own and are not from alabaster-android.
+`host/GameSettings.kt`, `host/InProcessRenderer.kt` and their tests are this project's own and are not from alabaster-android.
 
 The MIT License that covers that code:
 

@@ -16,7 +16,7 @@ Alabaster Droid is being built in milestones.
 | 1 | Launcher, Steam sign-in (password + Steam Guard, or QR code), profile, Steam diagnostics | done |
 | 2 | Download Alabaster Dawn from Steam on first PLAY | done |
 | 3 | Run the game: the WebView host, shim and the shader fixes mobile GPUs need | done |
-| 4 | Steam Cloud saves: pull on PLAY, upload on quit, conflict handling, offline play | downloads confirmed on a device; uploads not yet |
+| 4 | Steam Cloud saves: pull on PLAY, upload on quit, conflict handling, offline play | done |
 
 The main button reads **DOWNLOAD** until the game is on the device, then **PLAY**.
 
@@ -33,6 +33,11 @@ The main button reads **DOWNLOAD** until the game is on the device, then **PLAY*
   where a check lists what a sync would do with each file without doing it. When both sides changed
   you are asked which to keep; local saves that get replaced are copied to a backup folder first, and
   nothing is ever deleted from Steam Cloud. "Play offline" skips all of it.
+- **Game updates and files**: the launcher offers an update when Steam has a newer build; the
+  download runs in the background with a notification. Settings can verify or delete the game files.
+- **Game settings in the launcher** (Settings → Game): touch controls, frame-rate limit, resolution
+  and the rest of the in-game menu's settings.
+- **Playing status** (optional, off by default): show as playing Alabaster Dawn on Steam.
 - **Steam diagnostics** (Settings): a read-only report of Alabaster Dawn's depots, Steam Cloud rules and
   your Cloud files, with Share. It changes nothing on Steam.
 

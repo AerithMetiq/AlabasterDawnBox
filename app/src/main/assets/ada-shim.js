@@ -1,7 +1,10 @@
 /*
  * From alabaster-android (https://github.com/moronigranja/alabaster-android), commit f1cedd5.
  * MIT License, Copyright (c) 2026 Moroni Granja. Changed for Alabaster Droid: the side menu's three
- * settings are read from the app twice a second instead of on every frame (see pollGamepads).
+ * settings are read from the app twice a second instead of on every frame (see pollGamepads), and
+ * the frame-rate gate keeps a running deadline, so a rate the screen cannot divide evenly (45 on a
+ * 60 Hz panel) averages that rate instead of dropping to the next one down; and a Resolution chosen
+ * in the launcher is stored before the engine boots (applyChosenResolution).
  */
 /*
  * Alabaster Dawn — Android WebView shim.
@@ -903,7 +906,7 @@
     })();
 
     /* ---- frame-rate limit -------------------------------------------------
-     * The side menu's frame-rate switch and the rate slider it reveals (20/30/40/45/60, see FpsLimit).
+     * The side menu's frame-rate switch and the rate slider it reveals (30/45/60/90/120, see FpsLimit).
      * The engine drives *everything* it draws from `requestAnimationFrame` - `System.run` re-arms
      * itself at the end of every frame, and the GUI's own canvases do the same - so gating rAF gates
      * the frames, and half the frames is half the GPU time (the port is GPU-bound, see README
@@ -920,11 +923,19 @@
      * rates honest - 20 fps is a 50 ms interval against 60 Hz vsyncs at 50 ms, and 60 fps is 16.7 ms
      * against 15 ms - and it is what a rate that is not a whole division of the panel's refresh
      * resolves to: 45 fps (22.2 ms, 20 ms shortened) is 40 on a 120 Hz panel and 30 on a 60 Hz one,
-     * because the next vsync up is what is available. */
+     * because the next vsync up is what is available.
+     *
+     * Alabaster Droid: the last paragraph was alabaster-android's gate. This one keeps a running
+     * deadline instead of timing each frame from the one before: the next frame is due one interval
+     * after the last one was *due*, not after it was served. A whole division of the refresh rate is
+     * unchanged (30 on 60 Hz is still every second vsync), and a rate that is not one now averages
+     * out: 45 on 60 Hz is served on three vsyncs of every four. A deadline that has fallen behind
+     * (more than a whole interval late: a long stall, or the game paused) restarts from now, so
+     * there is no burst to catch up. */
     var fpsLimit = 0;
     var fpsFrameMs = 0;
     var fpsLimited = false;
-    var fpsLastFrame = 0;
+    var fpsNextFrame = 0;
     var fpsScheduled = false;
     var fpsQueue = [];
     var fpsCancelled = {};
@@ -943,11 +954,14 @@
 
         function tick(t) {
             fpsScheduled = false;
-            if (fpsLimited && t - fpsLastFrame < fpsFrameMs - fpsFrameMs / 10) {
-                schedule();
-                return;
+            if (fpsLimited) {
+                if (t < fpsNextFrame - fpsFrameMs / 10) {
+                    schedule();
+                    return;
+                }
+                fpsNextFrame += fpsFrameMs;
+                if (fpsNextFrame < t) fpsNextFrame = t + fpsFrameMs;
             }
-            fpsLastFrame = t;
             var batch = fpsQueue;
             fpsQueue = [];
             for (var i = 0; i < batch.length; i++) {
@@ -984,7 +998,7 @@
         fpsLimit = fps;
         fpsFrameMs = fps > 0 ? 1000 / fps : 0;
         fpsLimited = fps > 0;
-        fpsLastFrame = 0;
+        fpsNextFrame = 0;
         reportDiag("fps", fpsLimited ? "limited to " + fps + " fps" : "unlimited");
     }
 
@@ -1389,6 +1403,29 @@
         } catch (e) {
             /* A malformed blob is the engine's to repair; never break the boot over this. */
             report("reset the stored Resolution", e);
+        }
+    })();
+
+    /* ---- a Resolution chosen in the launcher ------------------------------
+     * Alabaster Droid: the launcher's settings can choose the game's Resolution, but the option lives
+     * in this page's storage (see above). The app opens the game with `?adaPixelSize=N` once, N being
+     * the rung (0 = 640x360 ... 4 = 2560x1440 on the ladder the host serves), and it is stored here,
+     * at document start, before the engine reads it. Every other stored option is left alone. */
+    (function applyChosenResolution() {
+        try {
+            var search = (window.location && window.location.search) || "";
+            var match = /[?&]adaPixelSize=([0-4])(?:&|$)/.exec(String(search));
+            if (!match) return;
+            var store = window.localStorage;
+            if (!store) return;
+            var raw = store.getItem("xg_local_options");
+            var data = raw ? JSON.parse(raw) : {};
+            if (!data || typeof data !== "object") data = {};
+            data["pixel-size"] = Number(match[1]);
+            store.setItem("xg_local_options", JSON.stringify(data));
+            reportDiag("video", "Resolution set from the launcher: rung " + match[1]);
+        } catch (e) {
+            report("set the chosen Resolution", e);
         }
     })();
 

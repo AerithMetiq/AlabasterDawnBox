@@ -60,7 +60,7 @@ class SteamProbeActivity : AppCompatActivity() {
         }
         status.text = "Connecting to Steam…"
         Thread({
-            val s = SteamSession()
+            val s = SteamSession(SteamSession.Purpose.DIAGNOSTICS)
             session = s
             try {
                 s.connect()

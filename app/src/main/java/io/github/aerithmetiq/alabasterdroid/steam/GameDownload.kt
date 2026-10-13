@@ -49,6 +49,23 @@ object GameDownload {
         return relative
     }
 
+    /** The marker file's `key=value` lines (app, depot, manifest, build). */
+    fun parseMarker(text: String): Map<String, String> =
+        text.lineSequence().mapNotNull { line ->
+            val cut = line.indexOf('=')
+            if (cut <= 0) null else line.substring(0, cut).trim() to line.substring(cut + 1).trim()
+        }.toMap()
+
+    /**
+     * Whether Steam's public build is another one than the installed one. Unknown on either side is
+     * "no": an update is only offered when both are known and differ.
+     */
+    fun updateAvailable(installedBuild: String?, steamBuild: String?): Boolean {
+        val here = installedBuild?.toLongOrNull() ?: return false
+        val there = steamBuild?.toLongOrNull() ?: return false
+        return here != there
+    }
+
     fun percent(done: Long, total: Long): Int =
         if (total <= 0) 0 else (done.coerceIn(0, total) * 100 / total).toInt()
 

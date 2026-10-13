@@ -1,9 +1,13 @@
 package io.github.aerithmetiq.alabasterdroid.steam
 
+import `in`.dragonbra.javasteam.enums.EOSType
+import `in`.dragonbra.javasteam.enums.EPersonaState
 import `in`.dragonbra.javasteam.enums.EResult
 import `in`.dragonbra.javasteam.steam.authentication.AuthSessionDetails
 import `in`.dragonbra.javasteam.steam.authentication.IAuthenticator
 import `in`.dragonbra.javasteam.steam.authentication.IChallengeUrlChanged
+import `in`.dragonbra.javasteam.steam.handlers.steamapps.GamePlayedInfo
+import `in`.dragonbra.javasteam.steam.handlers.steamapps.SteamApps
 import `in`.dragonbra.javasteam.steam.handlers.steamfriends.SteamFriends
 import `in`.dragonbra.javasteam.steam.handlers.steamfriends.callback.PersonaStateCallback
 import `in`.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails
@@ -29,6 +33,9 @@ data class SteamProfile(val personaName: String?, val avatarHashHex: String?)
 /** Steam answered and rejected the stored login: the user has to sign in again. */
 class LoginRejectedException(val result: EResult) : IOException("Steam rejected the login ($result)")
 
+/** The Steam server that answered cannot take the logon right now; another one can (see [SteamSession.open]). */
+class SteamBusyException(result: EResult) : IOException("Steam is busy ($result)")
+
 /**
  * One connection to Steam. Every call blocks, so a session is driven from a worker thread; JavaSteam's
  * callbacks are pumped on a thread of its own. [close] logs off and disconnects, and is safe to call
@@ -37,8 +44,14 @@ class LoginRejectedException(val result: EResult) : IOException("Steam rejected 
  * Failures are split the way the launcher needs them: [IOException] for "Steam could not be reached
  * or dropped us" (play offline, keep the login), [LoginRejectedException] for "Steam said no" (sign in
  * again).
+ *
+ * [purpose] sets the logon's `loginID`. Steam lets one account be logged on several times as long as
+ * the ids differ, and replaces a session whose id is used again; so each job that can overlap another
+ * (the launcher's profile refresh, a download, a save sync, the playing status) has its own.
  */
-class SteamSession : Closeable {
+class SteamSession(private val purpose: Purpose = Purpose.LAUNCHER) : Closeable {
+
+    enum class Purpose { LAUNCHER, DOWNLOAD, SAVES, PLAYING, DIAGNOSTICS }
 
     val client = SteamClient()
     private val manager = CallbackManager(client)
@@ -54,19 +67,35 @@ class SteamSession : Closeable {
     private val loggedOn = CompletableFuture<LoggedOnCallback>()
     private val ownPersona = CompletableFuture<PersonaStateCallback>()
     @Volatile private var signedIn = false
+
+    /**
+     * Called (on the callback thread) each time Steam pushes this account's own status, with a line
+     * such as "Online, game 3110760". This is Steam's own word on whether a playing status took.
+     * Asking for the status instead (`requestFriendInfo`) is not a substitute: its answer was seen to
+     * say "Offline, game 0" seconds after a push said otherwise.
+     */
+    @Volatile var onOwnState: ((String) -> Unit)? = null
+
+    /** True once Steam has closed the connection (or it dropped); the session is then of no more use. */
+    @Volatile var disconnected = false
+        private set
     private val closed = AtomicBoolean(false)
 
     private val subscriptions = listOf(
         manager.subscribe(ConnectedCallback::class.java) { connected.countDown() },
         manager.subscribe(DisconnectedCallback::class.java) {
             /* A dropped connection is an answer, not a hang: wake whatever is waiting. */
+            disconnected = true
             connected.countDown()
             loggedOn.completeExceptionally(IOException("Steam closed the connection"))
             ownPersona.completeExceptionally(IOException("Steam closed the connection"))
         },
         manager.subscribe(LoggedOnCallback::class.java) { loggedOn.complete(it) },
         manager.subscribe(PersonaStateCallback::class.java) { cb ->
-            if (cb.friendId == client.steamID) ownPersona.complete(cb)
+            if (cb.friendId == client.steamID) {
+                ownPersona.complete(cb)
+                onOwnState?.invoke("${cb.personaState}, game ${cb.gamePlayedAppId}")
+            }
         },
     )
 
@@ -132,7 +161,7 @@ class SteamSession : Closeable {
                 accessToken = login.refreshToken
                 shouldRememberPassword = true
                 /* Non-zero, so a Steam client signed in on the same network is not kicked off. */
-                loginID = LOGIN_ID
+                loginID = LOGIN_ID + purpose.ordinal
             }
         )
         val result = try {
@@ -145,7 +174,7 @@ class SteamSession : Closeable {
         when (result) {
             EResult.OK -> signedIn = true
             EResult.TryAnotherCM, EResult.ServiceUnavailable, EResult.Timeout, EResult.Busy ->
-                throw IOException("Steam is busy ($result)")
+                throw SteamBusyException(result)
             else -> throw LoginRejectedException(result)
         }
     }
@@ -165,6 +194,33 @@ class SteamSession : Closeable {
         return SteamProfile(name, hash)
     }
 
+    /**
+     * **Writes to Steam**: shows the account as online and playing [appId] for as long as this
+     * session stays logged on. Friends see it, and Steam counts the play time. [stopPlaying], or
+     * closing the session, ends it.
+     */
+    fun showPlaying(appId: Int, buildId: Int, processId: Int) {
+        val apps = client.getHandler(SteamApps::class.java) ?: return
+        client.getHandler(SteamFriends::class.java)?.setPersonaState(EPersonaState.Online)
+        Thread.sleep(1000)
+        apps.notifyGamesPlayed(
+            listOf(
+                GamePlayedInfo(
+                    gameId = appId.toLong(),
+                    processId = processId,
+                    ownerId = client.steamID?.accountID?.toInt() ?: 0,
+                    gameBuildId = buildId,
+                )
+            ),
+            EOSType.AndroidUnknown,
+        )
+    }
+
+    fun stopPlaying() {
+        runCatching { client.getHandler(SteamApps::class.java)?.notifyGamesPlayed(emptyList(), EOSType.AndroidUnknown) }
+        runCatching { client.getHandler(SteamFriends::class.java)?.setPersonaState(EPersonaState.Offline) }
+    }
+
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         if (signedIn) runCatching { user.logOff() }
@@ -174,12 +230,40 @@ class SteamSession : Closeable {
         subscriptions.forEach { runCatching { it.close() } }
     }
 
-    private companion object {
-        /** Any stable non-zero value; Steam only compares it between sessions of one account. */
-        const val LOGIN_ID = 0x41444431
+    companion object {
+        /**
+         * Connects and logs on, and returns the session. A server that answers "busy" or "try another
+         * server" is common and brief, so that answer is met with a fresh connection (which lands on
+         * another server), up to [attempts] times. Each session is handed to [hold] as it is made, so
+         * the caller can close it to cancel. Throws as [connect] and [logOn] do.
+         */
+        fun open(purpose: Purpose, login: SteamLogin, attempts: Int = 3, hold: (SteamSession) -> Unit = {}): SteamSession {
+            var last: SteamBusyException? = null
+            repeat(attempts) { attempt ->
+                val s = SteamSession(purpose)
+                hold(s)
+                try {
+                    s.connect()
+                    s.logOn(login)
+                    return s
+                } catch (e: SteamBusyException) {
+                    last = e
+                    s.close()
+                    Thread.sleep(1000L * (attempt + 1))
+                } catch (e: Throwable) {
+                    s.close()
+                    throw e
+                }
+            }
+            throw last ?: IOException("could not log on to Steam")
+        }
+
+        /** Any stable non-zero value; Steam only compares it between sessions of one account. The
+         *  purpose's number is added to it. */
+        private const val LOGIN_ID = 0x41444431
 
         /** EClientPersonaStateFlag bits: the name, and presence (which carries the avatar hash). */
-        const val PERSONA_NAME = 2
-        const val PERSONA_PRESENCE = 16
+        private const val PERSONA_NAME = 2
+        private const val PERSONA_PRESENCE = 16
     }
 }

@@ -159,6 +159,28 @@ object CloudSaves {
         return if (parts.isEmpty()) "Your saves match Steam Cloud." else parts.joinToString(" ")
     }
 
+    /** How many of this device's save files differ from what was last in step with Steam Cloud. */
+    fun changedSince(local: List<SaveFile>, base: Map<String, String>): Int = local.count { base[it.name] != it.sha }
+
+    /**
+     * The launcher's standing line about the saves: when the last sync with Steam Cloud finished
+     * ([lastSyncMs], 0 for never) and how many files have changed on this device since.
+     */
+    fun syncStatus(nowMs: Long, lastSyncMs: Long, changed: Int): String {
+        val synced = if (lastSyncMs <= 0) "Not synced with Steam Cloud yet" else "Synced with Steam Cloud ${ago(nowMs - lastSyncMs)}"
+        return if (changed > 0) "$synced · ${files(changed)} changed here since" else synced
+    }
+
+    private fun ago(ms: Long): String {
+        val minutes = ms / 60_000
+        return when {
+            minutes < 1 -> "just now"
+            minutes < 60 -> if (minutes == 1L) "1 minute ago" else "$minutes minutes ago"
+            minutes < 48 * 60 -> (minutes / 60).let { if (it == 1L) "1 hour ago" else "$it hours ago" }
+            else -> "${minutes / (24 * 60)} days ago"
+        }
+    }
+
     private fun files(n: Int) = if (n == 1) "1 save file" else "$n save files"
 
     /**

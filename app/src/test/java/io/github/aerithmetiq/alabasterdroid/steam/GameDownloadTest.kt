@@ -67,4 +67,21 @@ class GameDownloadTest {
             GameDownload.progressLine(1572864, 3145728),
         )
     }
+
+    @Test
+    fun theMarkerIsReadBackAsKeysAndValues() {
+        val marker = GameDownload.parseMarker("app=3110760\ndepot=3110761\nmanifest=8847532658958186681\nbuild=25724722\n")
+        assertEquals("25724722", marker["build"])
+        assertEquals("3110761", marker["depot"])
+        assertEquals(emptyMap<String, String>(), GameDownload.parseMarker("\nnot a marker\n"))
+    }
+
+    @Test
+    fun anUpdateIsOfferedOnlyWhenBothBuildsAreKnownAndDiffer() {
+        assertEquals(true, GameDownload.updateAvailable("25724722", "25800000"))
+        assertEquals(false, GameDownload.updateAvailable("25724722", "25724722"))
+        assertEquals("Steam was not asked yet", false, GameDownload.updateAvailable("25724722", null))
+        assertEquals("an old marker without a build", false, GameDownload.updateAvailable("unknown", "25800000"))
+        assertEquals(false, GameDownload.updateAvailable(null, "25800000"))
+    }
 }

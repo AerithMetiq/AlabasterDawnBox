@@ -1,6 +1,7 @@
 /*
  * From alabaster-android (https://github.com/moronigranja/alabaster-android), commit f1cedd5.
- * MIT License, Copyright (c) 2026 Moroni Granja. Only the package name is changed.
+ * MIT License, Copyright (c) 2026 Moroni Granja. Changed: the package name, and Alabaster Droid's
+ * [OnScreenPadView.touchControls] switch, which removes the whole overlay.
  */
 package io.github.aerithmetiq.alabasterdroid.host
 
@@ -108,6 +109,21 @@ class OnScreenPadView(context: Context) : View(context) {
             invalidate()
         }
 
+    /**
+     * Alabaster Droid: whether there are touch controls at all (the side menu's switch). Off takes
+     * the whole overlay away, its PAD/EDIT buttons included, and it stops feeding the gamepad;
+     * [padEnabled] only hides the controls and leaves those buttons.
+     */
+    var touchControls = true
+        set(value) {
+            if (field == value) return
+            if (!value) commitIfEditing()
+            field = value
+            visibility = if (value) VISIBLE else GONE
+            applyOverlay()
+            invalidate()
+        }
+
     var onToggle: ((Boolean) -> Unit)? = null
 
     /** Fired on a DOWN the pad consumes, so the Activity can nudge a suspended `AudioContext`. */
@@ -186,7 +202,7 @@ class OnScreenPadView(context: Context) : View(context) {
     private fun pillsDrawn(): Boolean = !externalInputHides()
 
     /** Whether the overlay is a pad right now: the controls are drawn and no editor is open. */
-    private fun overlayActive(): Boolean = controlsDrawn() && !model.editing
+    private fun overlayActive(): Boolean = touchControls && controlsDrawn() && !model.editing
 
     /**
      * The one place the overlay contributes to the gamepad. Disabling clears what the overlay last

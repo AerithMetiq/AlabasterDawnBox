@@ -142,4 +142,22 @@ class CloudSavesTest {
         assertEquals("    cloud: 1.0 KiB  2026-10-07 02:27Z  sha aaaaaaaa", off[2])
         assertEquals("Default/System.save: would UPLOAD to Steam Cloud", CloudSaves.report(steps, uploads = true)[0])
     }
+
+    @Test
+    fun theStandingLineSaysWhenTheSavesWereLastSyncedAndWhatChangedSince() {
+        val now = 1_000_000_000_000L
+        assertEquals("Not synced with Steam Cloud yet", CloudSaves.syncStatus(now, 0, 0))
+        assertEquals("Synced with Steam Cloud just now", CloudSaves.syncStatus(now, now - 20_000, 0))
+        assertEquals("Synced with Steam Cloud 1 minute ago", CloudSaves.syncStatus(now, now - 61_000, 0))
+        assertEquals("Synced with Steam Cloud 5 minutes ago · 3 save files changed here since", CloudSaves.syncStatus(now, now - 5 * 60_000, 3))
+        assertEquals("Synced with Steam Cloud 3 hours ago · 1 save file changed here since", CloudSaves.syncStatus(now, now - 3 * 3_600_000L, 1))
+        assertEquals("Synced with Steam Cloud 4 days ago", CloudSaves.syncStatus(now, now - 4 * 86_400_000L, 0))
+    }
+
+    @Test
+    fun changedSinceCountsFilesThatDifferFromTheBaseOrAreNew() {
+        val local = listOf(f("same", a), f("edited", b), f("new", c))
+        assertEquals(2, CloudSaves.changedSince(local, mapOf("same" to a, "edited" to a, "gone" to a)))
+        assertEquals(3, CloudSaves.changedSince(local, emptyMap()))
+    }
 }

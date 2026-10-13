@@ -31,6 +31,19 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
+/**
+ * **Read-only**: the build id of the game's public branch on Steam, or null when Steam does not say.
+ * The launcher compares it with the installed build to offer an update.
+ */
+fun steamPublicBuild(session: SteamSession, appId: Int): String? {
+    val apps = session.client.getHandler(SteamApps::class.java) ?: return null
+    val tokens = apps.picsGetAccessTokens(listOf(appId), emptyList()).toFuture().get(30, TimeUnit.SECONDS)
+    val info = apps.picsGetProductInfo(listOf(PICSRequest(appId, tokens.appTokens[appId] ?: 0L)), emptyList())
+        .toFuture().get(30, TimeUnit.SECONDS)
+    val product = info.results.flatMap { it.apps.entries }.firstOrNull { it.key == appId }?.value ?: return null
+    return product.keyValues["depots"]["branches"]["public"]["buildid"].value
+}
+
 /** The download cannot work as things are (no access, no such depot, no space); retrying will not help. */
 class GameDownloadException(message: String) : Exception(message)
 

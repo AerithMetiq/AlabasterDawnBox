@@ -63,7 +63,9 @@ import java.io.File
  * screen taken out: Alabaster Droid's launcher downloads the game from Steam into the app's own files
  * folder, so this activity is started by PLAY, reads that folder and goes straight to the WebView. The
  * WebView set-up, the shim injection, input, the side menu, the on-screen pad, diagnostics and the
- * pause/resume handling are alabaster-android's, unchanged.
+ * pause/resume handling are alabaster-android's. Alabaster Droid's own: opening the side menu pauses
+ * the game and hands the controller to the menu ([openMenu], [menuKey]), and the frame-rate cap also
+ * chooses the screen's refresh rate ([applyRefreshRate]).
  *
  * Saves are plain files in `userdata/` next to the game (the Steam layout: `Saves/Default/…`), outside
  * `terra/`. Nothing under the game folder is ever written to.
@@ -85,6 +87,11 @@ class GameActivity : Activity() {
     /** Set by [exitGame]: the game's process ends once the activity is gone. */
     private var exiting = false
     private var lastBackAt = 0L
+    /** The refresh rates this screen offers at its current size, and the caps the menu shows for them. */
+    private var refreshRates: List<Int> = emptyList()
+    private var fpsChoices: List<Int> = FpsLimit.CHOICES
+    /** The direction a stick or hat is held in while the menu is open, as a D-pad key code, or 0. */
+    private var menuHeldDirection = 0
     private var fsBridge: FsBridge? = null
     private var saveStore: SaveStore? = null
     private var padLayoutStore: PadLayoutStore? = null
@@ -148,7 +155,7 @@ class GameActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        prefs = getSharedPreferences(PREF, MODE_PRIVATE)
+        prefs = GameSettings.prefs(this)
         /* Everything logged here is also written to logcat, so nothing is lost on a device where
          * the diagnostics panel cannot be read. The sink also marks the persistent record dirty and
          * posts the auto-off check on the shim's boot report: it runs inside Diag's lock, so it must
@@ -157,7 +164,11 @@ class GameActivity : Activity() {
             Log.i(TAG, line)
             if (line.contains(" ENGINE ")) lastEngineReport = line.substringAfter("ENGINE ")
             logDirty = true
-            if (line.contains(" ENGINE boot: ")) watchdog.post { autoDisableLog() }
+            if (line.contains(" ENGINE boot: ")) watchdog.post {
+                autoDisableLog()
+                /* Alabaster Droid: what the game renders at, for the launcher's settings to show. */
+                GameSettings.resolutionIn(line)?.let { prefs.edit().putString(GameSettings.KEY_RESOLUTION_LAST, it).apply() }
+            }
         } }
         diag.line("port ${appVersion()} on ${Build.MANUFACTURER} ${Build.MODEL}, Android " +
             "${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}, ${Build.SUPPORTED_ABIS.firstOrNull()})")
@@ -166,7 +177,11 @@ class GameActivity : Activity() {
         viewAlign = ViewAlign.fromWire(prefs.getString(KEY_VIEW_ALIGN, null))
         statsEnabled = prefs.getBoolean(KEY_STATS, false)
         limitFps = prefs.getBoolean(KEY_LIMIT_FPS, false)
-        fpsLimit = FpsLimit.normalize(prefs.getInt(KEY_FPS_LIMIT, FpsLimit.DEFAULT))
+        refreshRates = GameSettings.screenRefreshRates(this)
+        fpsChoices = FpsLimit.choicesFor(refreshRates)
+        fpsLimit = FpsLimit.normalize(prefs.getInt(KEY_FPS_LIMIT, FpsLimit.DEFAULT), fpsChoices)
+        diag.line("screen refresh rates: $refreshRates Hz; frame limits offered: $fpsChoices")
+        applyRefreshRate()
         logToSaves = prefs.getBoolean(LogFile.PREF_KEY, true)
 
         gameRoot = AppGameFiles.root(this)
@@ -269,10 +284,14 @@ class GameActivity : Activity() {
     }
 
     /** The game's URL, carrying the one-shot video reset to the shim when one was armed. */
-    private fun gameUrl(resetVideo: Boolean): String {
+    private fun gameUrl(resetVideo: Boolean, resolution: Int = -1): String {
         val p = profile ?: return ""
         val param = p.resetVideoParam
-        return if (resetVideo && param != null) "${p.entryUrl}?$param=1" else p.entryUrl
+        val query = ArrayList<String>()
+        if (resetVideo && param != null) query.add("$param=1")
+        /* Alabaster Droid: a Resolution chosen in the launcher's settings (see [GameSettings]). */
+        if (resolution in GameSettings.RESOLUTIONS.indices) query.add("${GameSettings.RESOLUTION_PARAM}=$resolution")
+        return if (query.isEmpty()) p.entryUrl else p.entryUrl + "?" + query.joinToString("&")
     }
 
     private fun launchWebView() {
@@ -366,6 +385,7 @@ class GameActivity : Activity() {
         )
         val pad = OnScreenPadView(this).apply {
             padEnabled = prefs.getBoolean(KEY_PAD, true)
+            touchControls = prefs.getBoolean(GameSettings.KEY_TOUCH_CONTROLS, true)
             hideWithExternalInput = this@GameActivity.hideWithExternalInput
             dynamicSticks = this@GameActivity.dynamicSticks
             layout = padLayoutStore?.load() ?: PadLayout()
@@ -380,7 +400,8 @@ class GameActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
-        val menu = SideMenuView(this, viewAlignSupported = selected.viewAlign).apply {
+        val menu = SideMenuView(this, viewAlignSupported = selected.viewAlign, fpsChoices = fpsChoices).apply {
+            setTouchControls(prefs.getBoolean(GameSettings.KEY_TOUCH_CONTROLS, true))
             setHideWithExternalInput(this@GameActivity.hideWithExternalInput)
             setDynamicSticks(this@GameActivity.dynamicSticks)
             setStatsEnabled(statsEnabled)
@@ -388,6 +409,12 @@ class GameActivity : Activity() {
             setFpsLimit(fpsLimit)
             setLogToSaves(logToSaves)
             setAlign(viewAlign)
+            onTouchControls = {
+                prefs.edit().putBoolean(GameSettings.KEY_TOUCH_CONTROLS, it).apply()
+                padView?.touchControls = it
+                menuView?.setTouchControls(it)
+                diag.line("touch controls " + (if (it) "on" else "off"))
+            }
             onHideWithExternalInput = {
                 this@GameActivity.hideWithExternalInput = it
                 prefs.edit().putBoolean(KEY_HIDE_EXTERNAL_INPUT, it).apply()
@@ -410,6 +437,7 @@ class GameActivity : Activity() {
                 this@GameActivity.limitFps = it
                 prefs.edit().putBoolean(KEY_LIMIT_FPS, it).apply()
                 menuView?.setLimitFps(it)
+                applyRefreshRate()
                 diag.line("frame limit " + (if (it) "on: $fpsLimit fps" else "off"))
             }
             /* The slider's rate; the switch keeps its own state, so a rate can be chosen while the
@@ -418,6 +446,7 @@ class GameActivity : Activity() {
                 this@GameActivity.fpsLimit = it
                 prefs.edit().putInt(KEY_FPS_LIMIT, it).apply()
                 menuView?.setFpsLimit(it)
+                applyRefreshRate()
                 diag.line("frame limit: $it fps" + (if (this@GameActivity.limitFps) "" else " (off)"))
             }
             /* An explicit tap ends the auto-off for good, whichever way it went. */
@@ -454,7 +483,12 @@ class GameActivity : Activity() {
         watchdog.postDelayed(watchdogTick, WATCHDOG_TICK_MS)
         val resetVideo = selected.resetVideoParam != null && prefs.getBoolean(KEY_RESET_VIDEO, false)
         if (resetVideo) prefs.edit().putBoolean(KEY_RESET_VIDEO, false).apply()
-        view.loadUrl(gameUrl(resetVideo))
+        val resolution = prefs.getInt(GameSettings.KEY_RESOLUTION_NEXT, -1)
+        if (resolution >= 0) {
+            prefs.edit().putInt(GameSettings.KEY_RESOLUTION_NEXT, -1).apply()
+            diag.line("resolution chosen in the launcher: ${GameSettings.RESOLUTIONS.getOrNull(resolution)}")
+        }
+        view.loadUrl(gameUrl(resetVideo, resolution))
     }
 
     /**
@@ -522,7 +556,7 @@ class GameActivity : Activity() {
                 /* The dialog held window focus, which blurred the page; hand it back like closeMenu. */
                 webView?.requestFocus()
                 setPageFocus(true)
-                engineActive = true
+                engineActive = menuView?.isOpen != true
             }
             /* The dialog blurs the page, and the engine stops its loop on `blur` by design: silence
              * while it is open is expected, so the watchdog must not call it a hang. */
@@ -736,6 +770,11 @@ class GameActivity : Activity() {
         menu.setVersion("port ${appVersion()} · " + (profile?.displayName ?: "no game"))
         menu.setLastEngineReport(lastEngineReport)
         menu.open()
+        /* Alabaster Droid: the game is paused while the menu is open (the engine stops its loop and
+         * its audio on the page's blur), and the controller drives the menu instead (see [menuKey]). */
+        menuHeldDirection = 0
+        engineActive = false
+        setPageFocus(false)
     }
 
     /**
@@ -747,6 +786,64 @@ class GameActivity : Activity() {
         menuView?.close()
         webView?.requestFocus()
         setPageFocus(true)
+        engineActive = true
+    }
+
+    /**
+     * A controller or keyboard key while the menu is open: B (or Escape) resumes the game, the rest
+     * is the menu's. Acted on at key-down, with B at key-up so the game does not see B held as it
+     * resumes. Returns whether the key was the menu's.
+     */
+    private fun menuKey(event: KeyEvent): Boolean {
+        val menu = menuView?.takeIf { it.isOpen } ?: return false
+        val code = event.keyCode
+        if (code == KeyEvent.KEYCODE_BUTTON_B || code == KeyEvent.KEYCODE_ESCAPE) {
+            if (event.action == KeyEvent.ACTION_UP) closeMenu()
+            return true
+        }
+        return when (code) {
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                if (event.action == KeyEvent.ACTION_DOWN) menu.padKey(code)
+                true
+            }
+            else -> false
+        }
+    }
+
+    /** A stick or hat while the menu is open: pushing it in a direction is one press of that way. */
+    private fun menuMotion(event: MotionEvent) {
+        val menu = menuView?.takeIf { it.isOpen } ?: return
+        fun axis(a: Int, b: Int): Float {
+            val x = event.getAxisValue(a)
+            val y = event.getAxisValue(b)
+            return if (kotlin.math.abs(x) >= kotlin.math.abs(y)) x else y
+        }
+        val x = axis(MotionEvent.AXIS_HAT_X, MotionEvent.AXIS_X)
+        val y = axis(MotionEvent.AXIS_HAT_Y, MotionEvent.AXIS_Y)
+        val direction = when {
+            y <= -MENU_STICK -> KeyEvent.KEYCODE_DPAD_UP
+            y >= MENU_STICK -> KeyEvent.KEYCODE_DPAD_DOWN
+            x <= -MENU_STICK -> KeyEvent.KEYCODE_DPAD_LEFT
+            x >= MENU_STICK -> KeyEvent.KEYCODE_DPAD_RIGHT
+            else -> 0
+        }
+        if (direction != menuHeldDirection) {
+            menuHeldDirection = direction
+            if (direction != 0) menu.padKey(direction)
+        }
+    }
+
+    /**
+     * Asks for the screen refresh rate the frame-rate cap is best shown at ([FpsLimit.refreshFor]):
+     * 90 or 120 need the panel in that mode, and with no cap the game gets the fastest one.
+     */
+    private fun applyRefreshRate() {
+        val rate = FpsLimit.refreshFor(if (limitFps) fpsLimit else FpsLimit.OFF, refreshRates) ?: return
+        if (refreshRates.size < 2) return
+        window.attributes = window.attributes.apply { preferredRefreshRate = rate.toFloat() }
+        diag.line("screen asked for $rate Hz")
     }
 
     /** Without a saves folder the port saves into app storage, which cannot be copied out. */
@@ -779,6 +876,17 @@ class GameActivity : Activity() {
              * paths do deliver one press, [backPressed] acts on the first and drops the second. */
             if (event.action == KeyEvent.ACTION_UP) backPressed("key")
             return true
+        }
+        /* Alabaster Droid: while the menu is open the controller is the menu's. Releases still reach
+         * the pad state, so a button held as the menu opened is not left stuck down. */
+        if (menuView?.isOpen == true) {
+            if (isGamepad(event.source)) {
+                padView?.noteExternalInput()
+                if (event.action == KeyEvent.ACTION_UP) Gamepad.onKey(event)
+                menuKey(event)
+                return true
+            }
+            if (menuKey(event)) return true
         }
         if (isGamepad(event.source)) {
             padView?.noteExternalInput()
@@ -900,6 +1008,7 @@ class GameActivity : Activity() {
         if (isGamepad(event.source)) {
             padView?.noteExternalInput()
             Gamepad.onMotion(event)
+            menuMotion(event)
             /* Alabaster Droid: alabaster-android logged the axes here on every stick movement, which
              * built and re-parsed the pad's JSON and wrote a log line per motion event on the UI
              * thread (about 12 % of a core while a stick moved). The game needs every core it can
@@ -926,6 +1035,9 @@ class GameActivity : Activity() {
      * `active` and the renderer kept ~20% CPU. Dispatched here instead.
      */
     private fun setPageFocus(focused: Boolean) {
+        /* Alabaster Droid: the open menu keeps the game paused, whatever else asks for it back
+         * (a resume, a dismissed dialog, a tap). [closeMenu] closes the menu first. */
+        if (focused && menuView?.isOpen == true) return
         webView?.evaluateJavascript(if (focused) PAGE_FOCUS_JS else PAGE_BLUR_JS, null)
     }
 
@@ -938,7 +1050,7 @@ class GameActivity : Activity() {
             it.requestFocus()
         }
         setPageFocus(true)
-        engineActive = true
+        engineActive = menuView?.isOpen != true
     }
 
     override fun onPause() {
@@ -1063,7 +1175,7 @@ class GameActivity : Activity() {
 
     companion object {
         private const val TAG = "RfPort"
-        private const val PREF = "ada"
+        private const val PREF = GameSettings.FILE
         /* The old single-folder key: read once at startup and then filed under its game's key. */
         private const val KEY_GAME = "game_tree_uri"
         /* The game the entry screen last pointed at: what auto-start starts. */
@@ -1087,23 +1199,26 @@ class GameActivity : Activity() {
         private const val KEY_SAVES = "saves_tree_uri"
 
         /* Whether the on-screen pad draws its controls. */
-        private const val KEY_PAD = "on_screen_pad"
+        private const val KEY_PAD = GameSettings.KEY_PAD
         /* Whether the two sticks start where the screen half is touched (the side menu's switch). */
-        private const val KEY_DYNAMIC_STICKS = "dynamic_sticks"
+        private const val KEY_DYNAMIC_STICKS = GameSettings.KEY_DYNAMIC_STICKS
         /* Whether external input (controller, mouse or keyboard) hides the on-screen overlay (the
          * side menu's switch). The stored key string is kept as-is so installs keep their setting. */
-        private const val KEY_HIDE_EXTERNAL_INPUT = "hide_with_controller"
+        private const val KEY_HIDE_EXTERNAL_INPUT = GameSettings.KEY_HIDE_EXTERNAL_INPUT
         /* Where the picture sits vertically: a ViewAlign.wire value. */
-        private const val KEY_VIEW_ALIGN = "view_align"
+        private const val KEY_VIEW_ALIGN = GameSettings.KEY_VIEW_ALIGN
         /* Whether the next start of the game should drop the game's stored Resolution option: set
          * from the side menu's Reset resolution row, or from the pre-game screen where there is no
          * page to reload yet, and cleared as the URL that carries it to the shim is built. */
         private const val KEY_RESET_VIDEO = "reset_video"
         /* Whether the shim draws its frame-rate/resolution/battery/thermal readout. */
-        private const val KEY_STATS = "stats_overlay"
+        private const val KEY_STATS = GameSettings.KEY_STATS
         /* Whether the shim caps the page's frame rate, for battery, and at what (see [FpsLimit]). */
-        private const val KEY_LIMIT_FPS = "limit_fps"
-        private const val KEY_FPS_LIMIT = "fps_limit"
+        private const val KEY_LIMIT_FPS = GameSettings.KEY_LIMIT_FPS
+        private const val KEY_FPS_LIMIT = GameSettings.KEY_FPS_LIMIT
+
+        /** How far a stick must be pushed to count as a direction in the menu. */
+        private const val MENU_STICK = 0.6f
         private const val REQ_GAME = 101
         private const val REQ_SAVES = 102
         private const val BRIDGE_NAME = "PortBridge"

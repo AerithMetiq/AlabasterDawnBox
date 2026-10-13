@@ -1,6 +1,8 @@
 package io.github.aerithmetiq.alabasterdroid
 
+import android.Manifest
 import android.app.ActivityManager
+import android.content.pm.PackageManager
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -37,8 +39,7 @@ import `in`.dragonbra.javasteam.steam.authentication.IAuthenticator
 import io.github.aerithmetiq.alabasterdroid.host.GameActivity
 import io.github.aerithmetiq.alabasterdroid.steam.CloudSaves
 import io.github.aerithmetiq.alabasterdroid.steam.CloudSync
-import io.github.aerithmetiq.alabasterdroid.steam.GameDownload
-import io.github.aerithmetiq.alabasterdroid.steam.GameDownloader
+import io.github.aerithmetiq.alabasterdroid.steam.steamPublicBuild
 import io.github.aerithmetiq.alabasterdroid.steam.LoginRejectedException
 import io.github.aerithmetiq.alabasterdroid.steam.LoginStore
 import io.github.aerithmetiq.alabasterdroid.steam.SaveAction
@@ -92,13 +93,10 @@ class LauncherActivity : AppCompatActivity() {
     @Volatile private var leaving = false
     @Volatile private var refreshing = false
 
-    /** The game download in progress, with its own session, so PLAY, signing out or leaving can stop it. */
-    @Volatile private var download: GameDownloader? = null
-    @Volatile private var downloadSession: SteamSession? = null
-    @Volatile private var downloading = false
-    @Volatile private var downloadCancelled = false
-    /** Shown on the button while file data is moving; null before that. UI thread only. */
-    private var downloadPercent: Int? = null
+    /** The game download runs in [GameDownloadService]; this is its state, mirrored for the screen. */
+    private val downloading get() = GameDownloadState.running
+    private val onDownloadChanged: () -> Unit = { showDownload() }
+    private lateinit var syncStatus: TextView
 
     /** A Steam Cloud save sync in progress, with its own session, and the question it may be waiting on. */
     @Volatile private var syncing = false
@@ -129,6 +127,7 @@ class LauncherActivity : AppCompatActivity() {
         downloadBar = findViewById(R.id.download_bar)
         avatar = findViewById(R.id.avatar)
         gameArt = findViewById(R.id.game_art)
+        syncStatus = findViewById(R.id.sync_status)
 
         /* The gold status bar. The avatar floats in the corner, outside the controls' layout, so it
          * is moved clear of the bar here. */
@@ -164,13 +163,26 @@ class LauncherActivity : AppCompatActivity() {
         super.onResume()
         loadGameArt()
         updatePlay()
+        showDownload()
+        showSyncStatus()
+        /* The game has been left (or was never started): the playing status ends with it. */
+        PlayingService.stop(this)
         syncAfterGame()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        GameDownloadState.listen(onDownloadChanged)
+    }
+
+    override fun onStop() {
+        GameDownloadState.unlisten(onDownloadChanged)
+        super.onStop()
     }
 
     override fun onDestroy() {
         leaving = true
         cancelSession()
-        cancelDownload()
         cancelSync()
         super.onDestroy()
     }
@@ -222,15 +234,17 @@ class LauncherActivity : AppCompatActivity() {
         if (!::play.isInitialized) return
         val playOffline = prefs.getBoolean(KEY_OFFLINE, false)
         play.text = when {
-            downloading -> downloadPercent?.let { "✕  CANCEL · $it%" } ?: "✕  CANCEL"
+            downloading -> "✕  CANCEL"
             !GameFiles.installed(this) -> "↓  DOWNLOAD"
             playOffline -> "▶  PLAY OFFLINE"
+            GameFiles.updateAvailable(this) -> "↑  UPDATE"
             else -> "▶  PLAY"
         }
         playCaption.text = when {
-            downloading -> "Downloading Alabaster Dawn · keep Alabaster Droid open until it finishes"
+            downloading -> "Downloading Alabaster Dawn · it carries on if you leave this screen"
             !GameFiles.installed(this) -> "Downloads your own copy of Alabaster Dawn from Steam"
             playOffline -> "Plays the saves on this device · no Steam Cloud sync"
+            GameFiles.updateAvailable(this) -> "A new build of Alabaster Dawn is on Steam"
             GameFiles.cloudUploads(this) -> "Syncs your saves with Steam Cloud before and after you play"
             else -> "Downloads your Steam Cloud saves · uploads are off (Settings)"
         }
@@ -432,6 +446,11 @@ class LauncherActivity : AppCompatActivity() {
                 s.connect()
                 s.logOn(login)
                 saveProfile(s)
+                /* While logged on anyway: is there a newer build of the game? Read-only. */
+                if (GameFiles.installed(this)) {
+                    runCatching { steamPublicBuild(s, SteamGame.ALABASTER_DAWN.appId) }.getOrNull()
+                        ?.let { GameFiles.setSteamBuild(this, it) }
+                }
                 ui { render() }
             } catch (e: LoginRejectedException) {
                 store.clearLogin()
@@ -520,12 +539,14 @@ class LauncherActivity : AppCompatActivity() {
         when {
             downloading -> {
                 setStatus("Stopping the download…")
-                cancelDownload()
+                GameDownloadService.cancel(this)
             }
             GameFiles.installed(this) ->
                 if (prefs.getBoolean(KEY_OFFLINE, false)) {
                     setStatus("")
                     startGame(online = false)
+                } else if (GameFiles.updateAvailable(this)) {
+                    askUpdate()
                 } else {
                     syncSaves(thenPlay = true)
                 }
@@ -538,6 +559,7 @@ class LauncherActivity : AppCompatActivity() {
     private fun startGame(online: Boolean) {
         /* Remembered on disk: Android may stop the launcher while the game runs. */
         prefs.edit().putBoolean(KEY_SYNC_AFTER_GAME, online).apply()
+        if (online && GameFiles.playingStatus(this)) PlayingService.start(this)
         startActivity(Intent(this, GameActivity::class.java))
     }
 
@@ -566,18 +588,14 @@ class LauncherActivity : AppCompatActivity() {
         val uploads = GameFiles.cloudUploads(this)
         setBusy(true, "Checking your Steam Cloud saves…")
         Thread({
-            val s = SteamSession()
+            var s: SteamSession? = null
             var launch = thenPlay
             var end: String
             try {
-                /* The start-up profile refresh logs on with the same login; let it finish first. */
-                while (refreshing && !leaving) Thread.sleep(100)
                 waitForGameToEnd()
-                syncSession = s
                 if (leaving) throw CancellationException()
                 val reached = try {
-                    s.connect()
-                    s.logOn(login)
+                    s = SteamSession.open(SteamSession.Purpose.SAVES, login) { syncSession = it }
                     true
                 } catch (e: LoginRejectedException) {
                     throw e
@@ -590,7 +608,7 @@ class LauncherActivity : AppCompatActivity() {
                     else "Couldn't reach Steam. Your saves are on this device and sync at the next PLAY."
                 } else {
                     val sync = CloudSync(
-                        SteamCloudFiles(s, SteamGame.ALABASTER_DAWN.appId),
+                        SteamCloudFiles(s!!, SteamGame.ALABASTER_DAWN.appId),
                         GameFiles.saves(this), GameFiles.syncBase(this), GameFiles.saveBackups(this),
                     )
                     val check = sync.check()
@@ -613,6 +631,7 @@ class LauncherActivity : AppCompatActivity() {
                     } else {
                         val out = sync.apply(check, steps, uploads, keptLocal) { text -> ui { setStatus(text) } }
                         end = CloudSaves.summary(out.downloaded, out.uploaded, out.notUploaded, uploads, out.uploadError)
+                        GameFiles.setLastSync(this, System.currentTimeMillis())
                         Log.i(TAG, "cloud sync: downloaded ${out.downloaded}, uploaded ${out.uploaded}, not uploaded ${out.notUploaded}")
                     }
                 }
@@ -630,13 +649,14 @@ class LauncherActivity : AppCompatActivity() {
                         if (thenPlay) "Press PLAY to try again, or tick Play offline." else "It is tried again at the next PLAY."
                 }
             } finally {
-                s.close()
+                syncSession?.close()
                 syncSession = null
                 syncing = false
             }
             ui {
                 setBusy(false, end)
                 render()
+                showSyncStatus()
                 if (launch) startGame(online = true)
             }
         }, "cloud-sync").start()
@@ -693,84 +713,77 @@ class LauncherActivity : AppCompatActivity() {
     }
 
     /**
-     * Downloads the game's `terra/` from Steam with the saved login, on a worker with a session of its
-     * own. Whatever is already on disk and intact is kept, so pressing PLAY again carries on a download
-     * that was cancelled or failed.
+     * Starts the download in [GameDownloadService], so it carries on when this screen is left. Whatever
+     * is already on disk and intact is kept, so the same press downloads, resumes, updates or repairs.
      */
     private fun startDownload() {
-        val login = store.load() ?: return
-        downloading = true
-        downloadCancelled = false
-        downloadPercent = null
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        downloadBar.isIndeterminate = true
-        downloadBar.visibility = View.VISIBLE
-        setStatus("Connecting to Steam…")
-        updatePlay()
-        Thread({
-            val s = SteamSession()
-            var end = "Alabaster Dawn is downloaded."
-            try {
-                /* The start-up profile refresh logs on with the same login; let it finish first. */
-                while (refreshing && !downloadCancelled) Thread.sleep(100)
-                downloadSession = s
-                if (downloadCancelled) throw CancellationException()
-                s.connect()
-                s.logOn(login)
-                val d = GameDownloader(s, SteamGame.ALABASTER_DAWN.appId, GameFiles.root(this))
-                download = d
-                if (downloadCancelled) throw CancellationException()
-                d.run(
-                    status = { text -> ui { setStatus(text) } },
-                    bytes = { done, total ->
-                        ui {
-                            val percent = GameDownload.percent(done, total)
-                            downloadBar.isIndeterminate = false
-                            downloadBar.progress = percent
-                            setStatus(GameDownload.progressLine(done, total))
-                            if (downloading && percent != downloadPercent) {
-                                downloadPercent = percent
-                                updatePlay()
-                            }
-                        }
-                    },
-                )
-            } catch (e: LoginRejectedException) {
-                store.clearLogin()
-                end = "Your Steam login has expired. Sign in again."
-            } catch (e: Throwable) {
-                end = if (downloadCancelled) {
-                    "Download stopped. Press DOWNLOAD to carry on."
-                } else {
-                    Log.w(TAG, "game download failed", e)
-                    "Download failed: ${SteamProbe.describe(e)}. Press DOWNLOAD to try again."
-                }
-            } finally {
-                s.close()
-                download = null
-                downloadSession = null
-                downloading = false
-            }
-            ui {
-                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                downloadBar.visibility = View.GONE
+        if (store.load() == null) return
+        /* The progress notification needs the user's say-so on Android 13+. The download does not
+         * wait for the answer and does not need it. */
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
+        GameDownloadService.start(this)
+    }
+
+    /** Mirrors the download service's state: the bar, the status line and the button. */
+    private fun showDownload() {
+        if (!::downloadBar.isInitialized) return
+        val running = GameDownloadState.running
+        if (running) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            val percent = GameDownloadState.percent
+            downloadBar.visibility = View.VISIBLE
+            downloadBar.isIndeterminate = percent == null
+            percent?.let { downloadBar.progress = it }
+            setStatus(GameDownloadState.status)
+            updatePlay()
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            downloadBar.visibility = View.GONE
+            GameDownloadState.takeEnd()?.let { end ->
                 /* Signing out stops the download too; "Signed out." is then the last word. */
-                if (store.load() != null || !downloadCancelled) setStatus(end)
+                if (store.load() != null) setStatus(end)
                 render()
                 loadGameArt()
             }
-        }, "game-download").start()
+        }
     }
 
-    private fun cancelDownload() {
-        downloadCancelled = true
-        download?.cancel()
-        cancelSession(downloadSession)
+    /** A newer build is on Steam: update now, or play the installed one. */
+    private fun askUpdate() {
+        AlertDialog.Builder(this)
+            .setTitle("Alabaster Dawn has an update")
+            .setMessage(
+                "Steam has build ${GameFiles.steamBuild(this)}; this device has build ${GameFiles.installedBuild(this)}.\n\n" +
+                    "Updating downloads only the files that changed. The game cannot be played until the update has finished."
+            )
+            .setPositiveButton("Update now") { _, _ -> startDownload() }
+            .setNegativeButton("Play this version") { _, _ -> syncSaves(thenPlay = true) }
+            .setNeutralButton("Cancel", null)
+            .show()
+    }
+
+    /** The standing line under PLAY: when the saves were last in step with Steam Cloud. */
+    private fun showSyncStatus() {
+        if (store.load() == null || !GameFiles.installed(this)) {
+            syncStatus.text = ""
+            return
+        }
+        Thread({
+            val changed = runCatching {
+                CloudSaves.changedSince(CloudSync.local(GameFiles.saves(this)), CloudSync.base(GameFiles.syncBase(this)))
+            }.getOrDefault(0)
+            val text = CloudSaves.syncStatus(System.currentTimeMillis(), GameFiles.lastSync(this), changed)
+            ui { syncStatus.text = text }
+        }, "sync-status").start()
     }
 
     private fun signOut() {
         cancelSession()
-        cancelDownload()
+        GameDownloadService.cancel(this)
         cancelSync()
         store.clearLogin()
         avatarFile.delete()
