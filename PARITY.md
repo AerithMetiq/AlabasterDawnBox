@@ -23,4 +23,8 @@ Dawn's `terra` engine) cannot be copied as they are: each needs its own look at 
 | L1/L2 only on a fresh tap | not offered (dash is not on L1/L2) | yes (CrossCode's dash); not yet tried in play |
 | Font glyph fix (`exactUnscaledDraws`) | not needed (WebGL text, not `ig.Font`) | yes, confirmed |
 | Shader rewrites, in-process renderer | yes | renderer yes; shaders not needed (canvas 2D) |
-| Mod loader | none exists for the game yet | being looked into (CCLoader) |
+| Mod loader | none exists for the game yet | CCLoader3, off by default; add/remove mods in Settings; test mods loaded on the Nova |
+| Verify leaves `<web root>/mods/` alone (`GameDownload.KEPT`) | yes (unused) | yes, checked |
+| Achievements wait while the playing status holds the game | yes | yes, checked |
+| JavaSteam message router added before connecting (crash fix) | yes | yes |
+| `fs.readdir` calls back later, as Node's does | yes (editor tools only) | yes: fixed the double extension load |

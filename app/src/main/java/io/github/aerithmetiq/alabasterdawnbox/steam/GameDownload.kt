@@ -15,6 +15,16 @@ object GameDownload {
     /** The engine's entry page; the depot that holds it is the one to download from. */
     const val ENTRY = "terra/index.html"
 
+    /**
+     * Folders below [WEB_ROOT] that hold the user's own files, not Steam's, and that a download or a
+     * verify leaves alone although the manifest does not list them: `mods/` (CrossCodeBox's mods,
+     * see `Mods`).
+     */
+    val KEPT = listOf("$WEB_ROOT/mods/")
+
+    /** Whether [path] (below the install folder, `/` separators) is the user's own (see [KEPT]). */
+    fun kept(path: String): Boolean = KEPT.any { path.startsWith(it) }
+
     /** Written into the install folder once every file is in place and verified. */
     const val MARKER = "installed.txt"
 

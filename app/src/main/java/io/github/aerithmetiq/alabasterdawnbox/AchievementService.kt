@@ -56,6 +56,12 @@ class AchievementService : Service() {
                 while (System.currentTimeMillis() - lastArrival < SETTLE_MS) Thread.sleep(250)
                 val names = synchronized(LOCK) { queue(this) }
                 if (names.isEmpty()) break
+                if (PlayingService.holdsGame) {
+                    /* Steam drops a second session that asks about the game being played; the
+                     * launcher sends the queue when the game is left (retry). */
+                    Log.i(TAG, "achievements: ${names.size} waiting until the game is left (the playing status holds it)")
+                    break
+                }
                 val login = LoginStore(this).load() ?: break
                 try {
                     SteamSession.open(SteamSession.Purpose.ACHIEVEMENTS, login).use { s ->

@@ -676,11 +676,13 @@
             if (!l) throw enoent(p);
             return l;
         },
+        /* AlabasterDawnBox, as CrossCodeBox: the callback comes later, as Node's always does (called at
+         * once inside CrossCode's resource loader, it made every extension load twice). */
         readdir: function (p, opts, cb) {
             if (typeof opts === "function") { cb = opts; opts = null; }
             if (typeof cb !== "function") return;
             var l = readdirRaw(p, opts);
-            if (l) cb(null, l); else cb(enoent(p));
+            setTimeout(function () { if (l) cb(null, l); else cb(enoent(p)); }, 0);
         },
         readFileSync: function (p) {
             var data = call(function (b) { return b.fsReadFile(String(p)); }, null);

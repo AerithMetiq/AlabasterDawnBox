@@ -7,7 +7,6 @@ import `in`.dragonbra.javasteam.enums.EResult
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserverUserstats.CMsgClientGetUserStats
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserverUserstats.CMsgClientStoreUserStats2
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserverUserstats.CMsgClientStoreUserStatsResponse
-import `in`.dragonbra.javasteam.steam.handlers.ClientMsgHandler
 import `in`.dragonbra.javasteam.steam.handlers.steamuserstats.SteamUserStats
 import `in`.dragonbra.javasteam.steam.handlers.steamuserstats.callback.UserStatsCallback
 import `in`.dragonbra.javasteam.types.AsyncJobSingle
@@ -45,7 +44,7 @@ class SteamAchievements(private val session: SteamSession, private val appId: In
         session.client.getHandler(SteamUserStats::class.java) ?: error("JavaSteam has no SteamUserStats handler")
     }
 
-    private val replies = StoreReplies().also { session.client.addHandler(it) }
+    private val replies = StoreReplies().also { r -> session.onMessage = r::handle }
 
     fun read(): State {
         val me = session.client.steamID ?: throw IOException("not logged on")
@@ -165,13 +164,13 @@ class SteamAchievements(private val session: SteamSession, private val appId: In
     }
 
     /** Catches Steam's answer to a stats change, which JavaSteam's own handlers ignore. */
-    private class StoreReplies : ClientMsgHandler() {
+    private class StoreReplies {
         @Volatile private var waiting: CompletableFuture<CMsgClientStoreUserStatsResponse>? = null
 
         fun expect(): CompletableFuture<CMsgClientStoreUserStatsResponse> =
             CompletableFuture<CMsgClientStoreUserStatsResponse>().also { waiting = it }
 
-        override fun handleMsg(packetMsg: IPacketMsg) {
+        fun handle(packetMsg: IPacketMsg) {
             if (packetMsg.msgType != EMsg.ClientStoreUserStatsResponse) return
             val body = ClientMsgProtobuf<CMsgClientStoreUserStatsResponse.Builder>(
                 CMsgClientStoreUserStatsResponse::class.java, packetMsg,

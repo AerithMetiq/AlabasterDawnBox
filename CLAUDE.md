@@ -142,6 +142,14 @@ renamed, so later fixes can be carried file by file):
   (`KEY_ALWAYS_SPRINT`, **off** here: Alabaster Dawn moves by the stick's tilt). CrossCode's dash-on-tap
   is not offered (its dash is not on L1/L2 here).
 - **The online dot** before "Signed in as" (`R.color.online`).
+- Fixes found in CrossCodeBox the same day and carried over: `SteamSession` adds one JavaSteam message
+  router before it connects (`onMessage`; adding a handler to a connected client crashed the launcher
+  with a `ConcurrentModificationException`); `AchievementService` waits while the playing status
+  holds the game (`PlayingService.holdsGame`: Steam cut off another session's stats read for the game
+  being played) and the launcher sends the queue on `onResume`; the shim's `fs.readdir` calls back
+  later, as Node's does (called at once inside CrossCode's resource loader, it loaded every extension
+  twice; Alabaster Dawn calls it only in its editor tools); and downloads leave `terra/mods/` alone
+  (`GameDownload.KEPT`, unused here). Booted on the Nova with all of it: sync and game as before.
 - **Steam Cloud copies before an upload** and **added depots** (below).
 
 **Steam Cloud saves (milestone 4), how it works:**

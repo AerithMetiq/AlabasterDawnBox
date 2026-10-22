@@ -1,5 +1,7 @@
 package io.github.aerithmetiq.alabasterdawnbox.steam
 
+import `in`.dragonbra.javasteam.base.IPacketMsg
+import `in`.dragonbra.javasteam.steam.handlers.ClientMsgHandler
 import `in`.dragonbra.javasteam.enums.EOSType
 import `in`.dragonbra.javasteam.enums.EPersonaState
 import `in`.dragonbra.javasteam.enums.EResult
@@ -60,6 +62,22 @@ class SteamSession(private val purpose: Purpose = Purpose.LAUNCHER) : Closeable 
 
     val client = if (purpose == Purpose.DOWNLOAD) SteamClient(downloadConfiguration()) else SteamClient()
     private val manager = CallbackManager(client)
+
+    /**
+     * Messages JavaSteam's own handlers ignore, for whoever sets this (see SteamAchievements); called
+     * on the connection thread. The handler that feeds it is added here, before the client connects:
+     * JavaSteam walks its handler map on the connection thread without a lock, so adding a handler to
+     * a connected client crashed that thread (ConcurrentModificationException, Nova, 2026-10-21).
+     */
+    @Volatile var onMessage: ((IPacketMsg) -> Unit)? = null
+
+    init {
+        client.addHandler(object : ClientMsgHandler() {
+            override fun handleMsg(packetMsg: IPacketMsg) {
+                onMessage?.invoke(packetMsg)
+            }
+        })
+    }
     private val user: SteamUser = client.getHandler(SteamUser::class.java)
         ?: error("JavaSteam has no SteamUser handler")
 

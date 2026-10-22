@@ -296,7 +296,8 @@ class GameDownloader(private val session: SteamSession, private val appId: Int, 
 
         /* Files a game update no longer ships, and anything left from an interrupted run. */
         File(root, GameDownload.WEB_ROOT).walkBottomUp().forEach { f ->
-            if (f.isFile && f.relativeTo(root).invariantSeparatorsPath !in wanted) f.delete()
+            val rel = f.relativeTo(root).invariantSeparatorsPath
+            if (f.isFile && rel !in wanted && !GameDownload.kept(rel)) f.delete()
         }
     }
 
