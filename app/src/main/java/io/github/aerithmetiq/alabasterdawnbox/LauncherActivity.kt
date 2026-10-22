@@ -116,6 +116,15 @@ class LauncherActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        /* One launcher per task. Started again while the app's task already exists (a frontend
+         * starting it by name, as ES-DE does), Android stacked a second launcher on the first, and
+         * leaving then took two presses of B (AerithMetiq, 2026-10-22; seen on the Nova as two
+         * LauncherActivity records in one task). This one closes, showing what was there: the
+         * launcher, or the game if it is running. */
+        if (!isTaskRoot) {
+            finish()
+            return
+        }
         setContentView(R.layout.activity_launcher)
         store = LoginStore(this)
 
