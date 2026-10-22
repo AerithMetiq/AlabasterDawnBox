@@ -69,6 +69,9 @@ dependencies {
     /* Compile-time only: JavaSteam's protobuf enums (a Steam Cloud file's state) extend a protobuf
      * type. JavaSteam already brings this version in at runtime. */
     compileOnly("com.google.protobuf:protobuf-java:4.31.1")
+    /* Compile-time only: the download session gives JavaSteam an HTTP client sized for many chunk
+     * requests at once (SteamSession). JavaSteam already brings this version in at runtime. */
+    compileOnly("com.squareup.okhttp3:okhttp:5.3.2")
 
     /* The game download calls JavaSteam's coroutine API, and JavaSteam leaves the two decompressors its
      * depot chunks need (zstd, LZMA) for the app to supply. Versions are the ones JavaSteam 1.8.0 uses. */

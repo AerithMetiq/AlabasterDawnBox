@@ -11,7 +11,7 @@
     <!-- The wordmark: the game's namesake stone. -->
     <color name="alabaster">#F4EDE4</color>
 
-    <!-- The one accent: dawn gold. Swap it for #40C4FF to use CrossDroid's cyan instead. -->
+    <!-- The one accent: dawn gold. -->
     <color name="accent">#FFB547</color>
     <color name="on_accent">#1A1206</color>
 

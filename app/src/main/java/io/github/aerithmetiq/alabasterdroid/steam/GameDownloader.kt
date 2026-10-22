@@ -11,6 +11,7 @@ import `in`.dragonbra.javasteam.steam.handlers.steamcontent.SteamContent
 import `in`.dragonbra.javasteam.types.DepotManifest
 import `in`.dragonbra.javasteam.types.FileData
 import `in`.dragonbra.javasteam.util.SteamKitWebRequestException
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -21,11 +22,15 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
 import java.security.MessageDigest
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -51,6 +56,12 @@ class GameDownloadException(message: String) : Exception(message)
  * Downloads a game's web build (`terra/`) from Steam into [root], using a signed-in [SteamSession].
  * **Read-only against Steam**: product info, a depot key, a manifest and file chunks.
  *
+ * Most of `terra/`'s 3 000-odd files are one small chunk each, so the time goes on waiting for answers,
+ * not on bandwidth. [CONNECTIONS] chunk requests are kept in flight at once, across all files, to
+ * Steam's least loaded servers, over connections that are kept open (the download session's HTTP
+ * client is sized for it, see [SteamSession]). Big and small files are interleaved so the rate stays
+ * even instead of collapsing into a tail of small files at the end.
+ *
  * The depot is not assumed: each of the app's own depots is asked for its manifest until one lists
  * `terra/index.html`, and only the files under that `terra/` are fetched. Every chunk is checked
  * against the manifest's checksum by JavaSteam as it is decrypted. Files already on disk with the
@@ -68,11 +79,14 @@ class GameDownloader(private val session: SteamSession, private val appId: Int, 
     @Volatile private var cancelled = false
     private val failure = AtomicReference<Throwable?>(null)
 
-    private var servers: List<Server> = emptyList()
+    /** The download servers, least loaded first; one that fails goes to the back. Guarded by itself. */
+    private val servers = ArrayList<Server>()
     private var proxy: Server? = null
     private val nextServer = AtomicInteger(0)
     /** CDN auth tokens by host, asked for only when a server answers 403. */
     private val cdnTokens = ConcurrentHashMap<String, String>()
+    /** Requests that failed and were tried again, for the log. */
+    private val retries = AtomicInteger(0)
 
     fun cancel() {
         cancelled = true
@@ -99,10 +113,13 @@ class GameDownloader(private val session: SteamSession, private val appId: Int, 
             status("Finding Steam's download servers…")
             val all = await(content.getServersForSteamPipe(parentScope = scope))
             proxy = all.firstOrNull { it.useAsProxy }
-            servers = all
-                .filter { (it.allowedAppIds.isEmpty() || appId in it.allowedAppIds) && (it.type == "SteamCache" || it.type == "CDN") }
-                .sortedBy { it.weightedLoad }
+            servers.addAll(
+                all.filter { (it.allowedAppIds.isEmpty() || appId in it.allowedAppIds) && (it.type == "SteamCache" || it.type == "CDN") }
+                    .sortedBy { it.weightedLoad }
+            )
             if (servers.isEmpty()) throw IOException("Steam returned no download servers")
+            Log.i(TAG, "download: Steam offered ${all.size} servers, ${servers.size} usable; using " +
+                servers.take(ACTIVE_SERVERS).joinToString { "${it.host} (${it.type}, load ${it.load}, weighted ${it.weightedLoad})" })
 
             status("Looking for the game's files…")
             val skipped = ArrayList<String>()
@@ -178,6 +195,7 @@ class GameDownloader(private val session: SteamSession, private val appId: Int, 
         }
 
         val done = AtomicLong(0)
+        val fetched = AtomicLong(0)
         val lastReport = AtomicLong(0)
         fun add(n: Long) {
             val now = done.addAndGet(n)
@@ -187,27 +205,66 @@ class GameDownloader(private val session: SteamSession, private val appId: Int, 
         }
         bytes(0, total)
 
-        /* Largest first, so the big files overlap with the many small ones instead of trailing alone. */
-        val pool = Executors.newFixedThreadPool(WORKERS)
+        val started = System.nanoTime()
+        val pool = Executors.newFixedThreadPool(CONNECTIONS)
+        val parts = ArrayList<Part>()
         try {
-            val jobs = wanted.entries.sortedByDescending { it.value.totalSize }.map { (target, file) ->
+            /* First, which files are already right (an interrupted download, or a verify): hashed in
+             * parallel, and counted as done. */
+            val needed = ConcurrentLinkedQueue<Pair<String, FileData>>()
+            wanted.entries.map { (target, file) ->
                 pool.submit {
-                    try {
+                    guarded {
                         check()
-                        val dest = File(root, target)
-                        if (isCurrent(dest, file)) add(file.totalSize)
-                        else downloadFile(found, file, dest, ::add)
-                    } catch (e: Throwable) {
-                        failure.compareAndSet(null, e)
+                        if (isCurrent(File(root, target), file)) add(file.totalSize) else needed.add(target to file)
                     }
+                }
+            }.forEach { it.get() }
+            failure.get()?.let { throw it }
+            val checkedNanos = System.nanoTime() - started
+
+            /* Then every chunk of every other file, as one queue. Files are taken alternately from the
+             * big end and the small end, and each file's chunks are queued together, so only a few
+             * files are open at a time. */
+            val jobs = ArrayList<Future<*>>()
+            for ((target, file) in GameDownload.interleaveBySize(needed.toList()) { it.second.totalSize }) {
+                val part = Part(File(root, target), file)
+                parts.add(part)
+                if (file.chunks.isEmpty()) {
+                    part.finish()
+                    continue
+                }
+                for (chunk in file.chunks.sortedBy { it.offset }) {
+                    jobs.add(pool.submit {
+                        guarded {
+                            check()
+                            val data = fetch(found.depotId, "part of ${part.dest.name}") { server, token ->
+                                val raw = ByteArray(chunk.compressedLength)
+                                cdn.downloadDepotChunk(found.depotId, chunk, server, raw, found.key, proxy, token)
+                                ByteArray(chunk.uncompressedLength).also { DepotChunk.process(chunk, raw, it, found.key) }
+                            }
+                            part.write(chunk.offset, data)
+                            fetched.addAndGet(data.size.toLong())
+                            add(data.size.toLong())
+                        }
+                    })
                 }
             }
             jobs.forEach { it.get() }
+            failure.get()?.let { throw it }
+            check()
+            val seconds = (System.nanoTime() - started) / 1e9
+            Log.i(
+                TAG,
+                "download: ${needed.size} files, ${fetched.get() / 1048576} MiB fetched in %.1f s (%.1f MiB/s); ".format(
+                    seconds, fetched.get() / 1048576.0 / seconds.coerceAtLeast(0.001),
+                ) + "${wanted.size - needed.size} files already current, checked in %.1f s; ".format(checkedNanos / 1e9) +
+                    "${retries.get()} requests tried again",
+            )
         } finally {
             pool.shutdownNow()
+            parts.forEach { it.abandon() }
         }
-        failure.get()?.let { throw it }
-        check()
         bytes(total, total)
 
         /* Files a game update no longer ships, and anything left from an interrupted run. */
@@ -216,26 +273,61 @@ class GameDownloader(private val session: SteamSession, private val appId: Int, 
         }
     }
 
-    private fun downloadFile(found: Found, file: FileData, dest: File, add: (Long) -> Unit) {
-        dest.parentFile?.mkdirs()
-        val part = File(dest.path + ".part")
-        RandomAccessFile(part, "rw").use { out ->
-            out.setLength(0)
-            for (chunk in file.chunks.sortedBy { it.offset }) {
-                val data = fetch(found.depotId, "part of ${dest.name}") { server, token ->
-                    val raw = ByteArray(chunk.compressedLength)
-                    cdn.downloadDepotChunk(found.depotId, chunk, server, raw, found.key, proxy, token)
-                    ByteArray(chunk.uncompressedLength).also { DepotChunk.process(chunk, raw, it, found.key) }
-                }
-                out.seek(chunk.offset)
-                out.write(data)
-                add(data.size.toLong())
-            }
-            out.setLength(file.totalSize)
+    /** Runs [body], recording its first failure for every other job to see (see [check]). */
+    private inline fun guarded(body: () -> Unit) {
+        try {
+            body()
+        } catch (e: Throwable) {
+            failure.compareAndSet(null, e)
         }
-        if (!part.renameTo(dest)) {
-            dest.delete()
-            if (!part.renameTo(dest)) throw IOException("could not write ${dest.name}")
+    }
+
+    /**
+     * One file being written: its chunks arrive in any order from any worker and are written at
+     * their offsets into `<name>.part`, which is opened at the first chunk and renamed to [dest] after
+     * the last. A file whose download failed keeps its `.part`, which the next run starts again.
+     */
+    private class Part(val dest: File, private val file: FileData) {
+        private val tmp = File(dest.path + ".part")
+        private var out: RandomAccessFile? = null
+        private var channel: FileChannel? = null
+        private var left = file.chunks.size
+
+        @Synchronized
+        fun write(offset: Long, data: ByteArray) {
+            val ch = channel ?: open()
+            val buffer = ByteBuffer.wrap(data)
+            while (buffer.hasRemaining()) ch.write(buffer, offset + buffer.position())
+            if (--left == 0) finish()
+        }
+
+        @Synchronized
+        fun finish() {
+            if (channel == null) open()
+            out!!.setLength(file.totalSize)
+            close()
+            if (!tmp.renameTo(dest)) {
+                dest.delete()
+                if (!tmp.renameTo(dest)) throw IOException("could not write ${dest.name}")
+            }
+        }
+
+        /** Closes the file if a failed or cancelled download left it open. */
+        @Synchronized
+        fun abandon() = close()
+
+        private fun open(): FileChannel {
+            dest.parentFile?.mkdirs()
+            val file = RandomAccessFile(tmp, "rw")
+            file.setLength(0)
+            out = file
+            return file.channel.also { channel = it }
+        }
+
+        private fun close() {
+            runCatching { out?.close() }
+            out = null
+            channel = null
         }
     }
 
@@ -256,29 +348,68 @@ class GameDownloader(private val session: SteamSession, private val appId: Int, 
     }
 
     /**
-     * Runs one CDN request, moving to the next server on a failure. A 403 means the server wants a CDN
-     * auth token, which is then asked for once per host.
+     * Runs one CDN request. A failure moves on to another server, after a pause that doubles each
+     * time ([BACKOFF_MS] up to [MAX_BACKOFF_MS]): Steam's servers answer 503 when they are busy, and
+     * asking again at once is what made a whole download fail on one chunk (seen on the Nova,
+     * 2026-10-21). A 403 means the server wants a CDN auth token, which is then asked for once per
+     * host and the request repeated at once.
      */
     private fun <T> fetch(depotId: Int, what: String, call: suspend (Server, String?) -> T): T {
         var last: Exception? = null
-        repeat(ATTEMPTS) {
+        var wait = false
+        for (attempt in 0 until ATTEMPTS) {
             check()
-            val server = servers[(nextServer.getAndIncrement() and Int.MAX_VALUE) % servers.size]
+            if (wait) pause(minOf(BACKOFF_MS shl (attempt - 1).coerceAtMost(10), MAX_BACKOFF_MS))
+            val server = nextServer()
             val host = server.host
             try {
                 return runBlocking { call(server, host?.let { cdnTokens[it] }) }
             } catch (e: SteamKitWebRequestException) {
                 last = e
+                wait = true
                 if (e.statusCode == 403 && host != null && !cdnTokens.containsKey(host)) {
                     runCatching { await(content.getCDNAuthToken(appId, depotId, host, scope)) }.getOrNull()
                         ?.takeIf { it.result == EResult.OK }
-                        ?.let { cdnTokens[host] = it.token }
+                        ?.let {
+                            cdnTokens[host] = it.token
+                            wait = false
+                        }
+                } else {
+                    demote(server)
                 }
             } catch (e: IOException) {
                 last = e
+                wait = true
+                demote(server)
+            }
+            if (retries.incrementAndGet() <= RETRIES_LOGGED) {
+                Log.w(TAG, "download: $what failed on $host (${last?.message}); trying again")
             }
         }
         throw IOException("the $what could not be downloaded: ${last?.message ?: "no answer"}", last)
+    }
+
+    /** Sleeps [ms], in slices, so a cancelled or failed download does not wait out the whole pause. */
+    private fun pause(ms: Long) {
+        val until = System.nanoTime() + ms * 1_000_000
+        while (System.nanoTime() < until) {
+            check()
+            Thread.sleep(minOf(250L, (until - System.nanoTime()) / 1_000_000 + 1))
+        }
+    }
+
+    /**
+     * The server for the next request: the [ACTIVE_SERVERS] least loaded ones in turn. Few servers
+     * means the connections to them stay open and are reused; a request to a new server costs a
+     * connection and a TLS handshake, which is most of the time a small chunk takes.
+     */
+    private fun nextServer(): Server = synchronized(servers) {
+        servers[(nextServer.getAndIncrement() and Int.MAX_VALUE) % minOf(ACTIVE_SERVERS, servers.size)]
+    }
+
+    /** A server that failed a request goes to the back of the list, so the next one in line takes its turns. */
+    private fun demote(server: Server) = synchronized(servers) {
+        if (servers.size > 1 && servers.remove(server)) servers.add(server)
     }
 
     /** Waits for one of JavaSteam's Steam requests; a dropped connection must not hang the download. */
@@ -290,12 +421,19 @@ class GameDownloader(private val session: SteamSession, private val appId: Int, 
         if (cancelled || failure.get() != null) throw CancellationException("download cancelled")
     }
 
-    private companion object {
-        const val TIMEOUT_SEC = 30L
-        const val WORKERS = 6
-        const val ATTEMPTS = 6
-        const val REPORT_NANOS = 250_000_000L
+    companion object {
+        private const val TAG = "AlabasterDroid"
+        private const val TIMEOUT_SEC = 30L
+        /** Chunk requests in flight at once; the download session's HTTP client allows as many per server. */
+        const val CONNECTIONS = 16
+        /** How many of the least loaded servers share the requests. */
+        private const val ACTIVE_SERVERS = 3
+        private const val ATTEMPTS = 8
+        private const val BACKOFF_MS = 500L
+        private const val MAX_BACKOFF_MS = 8_000L
+        private const val RETRIES_LOGGED = 20
+        private const val REPORT_NANOS = 250_000_000L
         /** Kept free beyond the download itself. */
-        const val SPARE_BYTES = 64L * 1024 * 1024
+        private const val SPARE_BYTES = 64L * 1024 * 1024
     }
 }

@@ -84,4 +84,14 @@ class GameDownloadTest {
         assertEquals("an old marker without a build", false, GameDownload.updateAvailable("unknown", "25800000"))
         assertEquals(false, GameDownload.updateAvailable(null, "25800000"))
     }
+
+    @Test
+    fun `files are taken from the big end and the small end in turn`() {
+        val sizes = listOf(5L, 100L, 1L, 50L, 7L, 3L)
+        assertEquals(listOf(100L, 1L, 50L, 3L, 7L, 5L), GameDownload.interleaveBySize(sizes) { it })
+        assertEquals(listOf(9L), GameDownload.interleaveBySize(listOf(9L)) { it })
+        assertEquals(emptyList<Long>(), GameDownload.interleaveBySize(emptyList<Long>()) { it })
+        val many = (1L..101L).toList().shuffled()
+        assertEquals("nothing lost or repeated", many.sorted(), GameDownload.interleaveBySize(many) { it }.sorted())
+    }
 }

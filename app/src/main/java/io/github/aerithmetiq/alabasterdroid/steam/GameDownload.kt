@@ -74,6 +74,23 @@ object GameDownload {
 
     private fun mib(bytes: Long): String = String.format(Locale.US, "%.1f", bytes / 1048576.0)
 
+    /**
+     * [items] largest first and smallest first in turn (largest, smallest, second largest, ...), so a
+     * download moves big and small files together: one big file's chunks keep the bandwidth busy
+     * while the small files' round trips overlap them.
+     */
+    fun <T> interleaveBySize(items: List<T>, size: (T) -> Long): List<T> {
+        val sorted = items.sortedByDescending(size)
+        val out = ArrayList<T>(sorted.size)
+        var big = 0
+        var small = sorted.size - 1
+        while (big <= small) {
+            out.add(sorted[big++])
+            if (big <= small) out.add(sorted[small--])
+        }
+        return out
+    }
+
     /** Depot manifests may use either separator, depending on how the manifest was read. */
     private fun normalize(fileName: String): String = fileName.replace('\\', '/').trimStart('/')
 

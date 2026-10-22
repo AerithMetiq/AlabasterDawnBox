@@ -56,7 +56,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - **Written by Claude** (Anthropic's AI model, Claude Opus 5.5). **Reviewed and tested by
   AerithMetiq.** Commits name Claude as the author.
 - [CrossDroid](https://github.com/dain98/CrossDroid) by dain98: the launcher design this follows, for
-  CrossCode. No code was taken from it; see `NOTICE.md`.
+  CrossCode.
 - [RadicalFish Ports / alabaster-android](https://github.com/moronigranja/alabaster-android) by Moroni
   Granja (MIT): the research and the code that make Alabaster Dawn run in an Android WebView. The game
   host in this app is its code; see `NOTICE.md`.

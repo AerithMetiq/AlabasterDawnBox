@@ -7,6 +7,9 @@ Alabaster Droid: an unofficial Android launcher for Alabaster Dawn. MIT licensed
 The code was written by Claude (Anthropic's AI model, Claude Opus 5.5, in Claude Code) and reviewed and
 tested by AerithMetiq. Commits name Claude as the author and AerithMetiq as the committer.
 
+Everything outside the game host (the launcher, the Steam sign-in, the game download and the Steam
+Cloud sync) is this project's own, written on JavaSteam's API.
+
 This file and `LICENSE` are copied into the APK, so a distributed build carries its notices (Settings →
 Open-source notices).
 
@@ -96,10 +99,3 @@ The MIT License that covers that code:
 > NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
 > OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 > CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-## CrossDroid
-
-**CrossDroid** (https://github.com/dain98/CrossDroid) by **dain98** is the Steam launcher for
-CrossCode whose design this app's look follows (dark two-column launcher, Steam sign-in, Steam Cloud
-saves). **No code or assets are taken from it**; this app is an independent implementation on
-JavaSteam's own API.

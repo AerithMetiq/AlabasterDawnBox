@@ -17,12 +17,16 @@ import `in`.dragonbra.javasteam.steam.steamclient.SteamClient
 import `in`.dragonbra.javasteam.steam.steamclient.callbackmgr.CallbackManager
 import `in`.dragonbra.javasteam.steam.steamclient.callbacks.ConnectedCallback
 import `in`.dragonbra.javasteam.steam.steamclient.callbacks.DisconnectedCallback
+import `in`.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
+import okhttp3.OkHttpClient
 
 /** What a successful sign-in hands back: enough to log on again later without a password. */
 data class SteamLogin(val accountName: String, val refreshToken: String, val guardData: String?)
@@ -53,7 +57,7 @@ class SteamSession(private val purpose: Purpose = Purpose.LAUNCHER) : Closeable 
 
     enum class Purpose { LAUNCHER, DOWNLOAD, SAVES, PLAYING, DIAGNOSTICS }
 
-    val client = SteamClient()
+    val client = if (purpose == Purpose.DOWNLOAD) SteamClient(downloadConfiguration()) else SteamClient()
     private val manager = CallbackManager(client)
     private val user: SteamUser = client.getHandler(SteamUser::class.java)
         ?: error("JavaSteam has no SteamUser handler")
@@ -266,4 +270,17 @@ class SteamSession(private val purpose: Purpose = Purpose.LAUNCHER) : Closeable 
         private const val PERSONA_NAME = 2
         private const val PERSONA_PRESENCE = 16
     }
+}
+
+/**
+ * A download session's HTTP client: [GameDownloader] keeps [GameDownloader.CONNECTIONS] chunk requests
+ * in flight to a few servers. OkHttp's defaults (at most five requests per host, five idle connections
+ * kept) would queue most of them and keep closing connections that the next chunk then reopens.
+ */
+private fun downloadConfiguration(): SteamConfiguration {
+    val http = OkHttpClient.Builder()
+        .dispatcher(Dispatcher().apply { maxRequestsPerHost = GameDownloader.CONNECTIONS })
+        .connectionPool(ConnectionPool(GameDownloader.CONNECTIONS + 4, 5, TimeUnit.MINUTES))
+        .build()
+    return SteamConfiguration.create { it.withHttpClient(http) }
 }

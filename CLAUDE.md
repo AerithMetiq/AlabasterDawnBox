@@ -8,9 +8,8 @@ Guidance for Claude Code working in this repository. Read it before changing any
 Steam app **3110760**, Early Access) on Android. The user signs in to Steam, the app downloads the copy
 their account owns, runs the game's web build (`terra/`) in a WebView, and syncs saves with Steam Cloud.
 Built for controller-first handhelds (the maintainer's devices: **Retroid Pocket Nova**, **AYN Odin 3**)
-and phones. It is a sibling of CrossDroid (CrossCode) in look and purpose; milestone 1 was written
-independently; milestone 4's Steam Cloud transfer code is adapted from CrossDroid with permission
-(hard rule 2).
+and phones. Its launcher design follows CrossDroid's (a CrossCode launcher by dain98); none of
+CrossDroid's code is in it (hard rule 2).
 
 Package / applicationId: `io.github.aerithmetiq.alabasterdroid`. MIT licensed.
 
@@ -34,11 +33,14 @@ Package / applicationId: `io.github.aerithmetiq.alabasterdroid`. MIT licensed.
    downloaded copy (`GameFiles.titleBackground` = `title-color-01.png`, `titleName` =
    `title-name-01.png`, which replaces the "ALABASTER / DROID" wordmark while it is shown). The app icon and the fallback wordmark are
    original; game art can never be the installed app's icon, because an icon ships inside the APK.
-2. **CrossDroid** (github.com/dain98/CrossDroid) declares no license, but **dain98 has given permission
-   to use its code base**. Its code, layouts, images and look may be reused. Every reuse is listed in
-   `NOTICE.md` ("Code from CrossDroid"), credited to dain98 and marked as used with permission, and
-   the file says so at its top. So far: `steam/SteamCloudFiles.kt`. The permission covers CrossDroid's
-   own work, not CrossCode game files. A local copy of CrossDroid is at `~/CrossDroid`.
+2. **No CrossDroid code.** dain98 had allowed CrossDroid's code (github.com/dain98/CrossDroid) to be
+   reused, and **withdrew that permission on 2026-10-21**. Do not copy, adapt or read CrossDroid's code
+   for this project, the local copy at `~/CrossDroid` included. The one file that had been adapted
+   from it, `steam/SteamCloudFiles.kt`, was written again that day from JavaSteam's API and the
+   protocol facts below, without reading the old version. At AerithMetiq's request the history was
+   rewritten the same day so that every commit carries the new version (force-pushed with the
+   `v0.1.0` tag). The `v0.1.0` pre-release APK on GitHub was built before that, from the old code.
+   The README still credits CrossDroid's launcher design (not code).
 3. **alabaster-android** (github.com/moronigranja/alabaster-android) is **MIT**, © 2026 Moroni Granja.
    Its code may be reused for milestone 3, but every reused file keeps its copyright notice, and the
    reuse is listed in `NOTICE.md`. Prefer copying whole, well-understood pieces over rewriting them: its
@@ -126,8 +128,13 @@ update (needs a new build on Steam) and delete game files.
   (and not fetched again until the Cloud copy changes); a file deleted in the Cloud is moved to the
   backup folder here. Zero-byte local files are ignored.
 - `steam/SteamCloudFiles.kt` is the only code that writes to Steam (`upload`). It uploads without an
-  upload batch (`uploadBatchId = 0`), as CrossDroid does; a batch needs the auth session's client id,
-  which is not kept.
+  upload batch (`uploadBatchId = 0`); a batch needs the auth session's client id, which is not kept.
+  It sends the file uncompressed with `canEncrypt = false`, commits (or closes a failed transfer as
+  failed), then reads the Cloud listing back and only counts the upload when the file is listed with
+  the SHA-1 it sent. A download may come back as a one-entry zip; it is unpacked and checked against
+  Steam's SHA-1. Rewritten 2026-10-21 (hard rule 2). On the Nova that day the listing was confirmed
+  ("Check now": every file `same on both`, checksums matching); **download and upload not yet run**
+  (they run when a sync has something to move).
 
 **What the device's diagnostics report showed (2026-10-12, public build 25724722):**
 
@@ -159,7 +166,7 @@ app/src/main/java/io/github/aerithmetiq/alabasterdroid/
   steam/GameDownloader.kt downloads terra/ over JavaSteam's CDN client, resumable, verified
   steam/CloudSaves.kt     pure save-sync decisions: Cloud names, the three-way plan, wording (unit-tested)
   steam/CloudSync.kt      reads both sides and carries a plan out: downloads, backups, uploads
-  steam/SteamCloudFiles.kt  list / download / upload one app's Cloud files (adapted from CrossDroid)
+  steam/SteamCloudFiles.kt  list / download / upload one app's Cloud files (ours; rewritten 2026-10-21)
   CloudSavesActivity.kt   Settings → Steam Cloud saves: the uploads switch, the dry-run check, restore a backup
   steam/SaveBackups.kt    local save backups: list, restore, prune (unit-tested)
   GameDownloadService.kt  the download as a foreground service, and GameDownloadState for the launcher
@@ -375,6 +382,25 @@ At 960x540 in a busy area the game ran at 58-59 fps: about one dropped frame a s
   swallows chunk errors. `GameDownloader` calls the core API instead (`SteamApps.getDepotDecryptionKey`,
   `SteamContent.getManifestRequestCode` / `getServersForSteamPipe`, `cdn.Client`, `DepotChunk.process`)
   and downloads only the files under `terra/`. Revisit if a later JavaSteam adds a working filter.
+- **Download speed** (rewritten 2026-10-21): 2 433 of `terra/`'s
+  3 031 files are 64 KiB or less, so a download is mostly waiting for answers. `GameDownloader` keeps
+  `CONNECTIONS` (16) chunk requests in flight across all files, to the 3 least loaded servers (a
+  server that fails a request goes to the back of the list), and interleaves big and small files
+  (`GameDownload.interleaveBySize`). The download session's `SteamClient` gets an OkHttp client
+  sized for that (`SteamSession`: 16 requests per host, 20 idle connections); JavaSteam's default
+  client allows 5 of each. Before: 6 workers, one file each with its chunks in sequence, largest
+  files first, every request to the next of all servers. A failed request is tried again on
+  another server after a pause that doubles (0.5 s to 8 s, 8 attempts); the old code retried 6
+  times at once and then failed the whole download. A run logs the servers it uses and
+  `download: N files, X MiB fetched in S s` (`adb logcat -s AlabasterDroid`).
+  - Old build on the Nova (Wi-Fi, full download): about 3 MiB/s for 150 s while the big files ran,
+    then 0.3-0.5 MiB/s for the small-file tail; at 215 s (309.6 MiB) a chunk got HTTP 503 six times
+    and the download failed; resuming took 83 s more. About 4 min 53 s in all.
+  - New build, same day and network: **88 s** from the button to `installed.txt` (341 MiB in 80.4 s
+    of transfer, up to ~17 MiB/s, the small-file tail ~1.2 MiB/s), 16 requests retried, none failed.
+    Steam offered 20 servers; the 2nd-ranked, `cache1-pit-pitx`, refused connections from this
+    network (10 s connect timeouts), was demoted, and cost the first ~10 s.
+- `com.squareup.okhttp3:okhttp` is `compileOnly` (5.3.2, the version JavaSteam brings) for that client.
 - `com.google.protobuf:protobuf-java` is `compileOnly` (4.31.1): `SteamCloudFiles` reads a protobuf
   enum (a Cloud file's persist state; only `Persisted` files count as existing).
 - JavaSteam leaves the chunk decompressors to the app (`compileOnly`): `com.github.luben:zstd-jni` (the
