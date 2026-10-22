@@ -1,7 +1,8 @@
 /*
  * From alabaster-android (https://github.com/moronigranja/alabaster-android), commit f1cedd5.
- * MIT License, Copyright (c) 2026 Moroni Granja. Changed: the package name, and Alabaster Droid's
- * [OnScreenPadView.touchControls] switch, which removes the whole overlay.
+ * MIT License, Copyright (c) 2026 Moroni Granja. Changed: the package name, Alabaster Droid's
+ * [OnScreenPadView.touchControls] switch, which removes the whole overlay, and the idle timer in
+ * [OnScreenPadView.noteExternalInput], which is posted once instead of again on every input event.
  */
 package io.github.aerithmetiq.alabasterdroid.host
 
@@ -10,6 +11,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import kotlin.math.abs
@@ -40,10 +42,24 @@ class OnScreenPadView(context: Context) : View(context) {
     }
     private val triangle = Path()
 
-    private val showAgain = Runnable {
-        externalInputInUse = false
-        applyOverlay()
-        invalidate()
+    /* Alabaster Droid: when the last controller, mouse or keyboard event arrived (uptime), and whether
+     * [showAgain] is waiting to run. It waits for the input to have been quiet for
+     * EXTERNAL_INPUT_IDLE_MS; arriving early, it waits again for the rest of that time. */
+    private var lastExternalInputAt = 0L
+    private var showAgainPosted = false
+
+    private val showAgain = object : Runnable {
+        override fun run() {
+            val quiet = SystemClock.uptimeMillis() - lastExternalInputAt
+            if (quiet < EXTERNAL_INPUT_IDLE_MS) {
+                postDelayed(this, EXTERNAL_INPUT_IDLE_MS - quiet)
+                return
+            }
+            showAgainPosted = false
+            externalInputInUse = false
+            applyOverlay()
+            invalidate()
+        }
     }
 
     /** The layout being edited and drawn; assigning it re-places every control. */
@@ -144,19 +160,24 @@ class OnScreenPadView(context: Context) : View(context) {
     /** A controller, mouse or keyboard event: hide the controls now, show them once it has gone quiet. */
     fun noteExternalInput() {
         if (model.editing) return
+        lastExternalInputAt = SystemClock.uptimeMillis()
         if (!externalInputInUse) {
             externalInputInUse = true
             applyOverlay()
             invalidate()
         }
-        removeCallbacks(showAgain)
-        postDelayed(showAgain, EXTERNAL_INPUT_IDLE_MS)
+        /* Alabaster Droid: upstream removed and re-posted the timer here, for every stick movement. */
+        if (!showAgainPosted) {
+            showAgainPosted = true
+            postDelayed(showAgain, EXTERNAL_INPUT_IDLE_MS)
+        }
     }
 
     override fun onDetachedFromWindow() {
         /* The WebView is rebuilt on a renderer crash; save an edit in progress first. */
         commitIfEditing()
         removeCallbacks(showAgain)
+        showAgainPosted = false
         super.onDetachedFromWindow()
     }
 

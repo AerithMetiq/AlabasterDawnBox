@@ -1,6 +1,7 @@
 /*
  * From alabaster-android (https://github.com/moronigranja/alabaster-android), commit f1cedd5.
- * MIT License, Copyright (c) 2026 Moroni Granja. Only the package name is changed.
+ * MIT License, Copyright (c) 2026 Moroni Granja. Changed: the package name, and [VERSION_MANAGER] is
+ * internal so that [BundleBytes] can find the version block in the bundle's bytes.
  */
 package io.github.aerithmetiq.alabasterdroid.host
 
@@ -61,7 +62,7 @@ object GameVersion {
     }
 
     /** The class the four numbers and the suffix live in; the block ends at its first method. */
-    private const val VERSION_MANAGER = "class VersionManager {"
+    internal const val VERSION_MANAGER = "class VersionManager {"
     private const val MAX_BLOCK_CHARS = 4000
     private val NUMBERS = Regex("""this\.(major|minor|patch|hotfix)\s*=\s*(\d+);""")
     private val SUFFIX = Regex("""this\.suffix\s*=\s*"([^"]*)";""")

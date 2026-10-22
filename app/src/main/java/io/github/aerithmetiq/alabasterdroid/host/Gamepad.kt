@@ -1,6 +1,8 @@
 /*
  * From alabaster-android (https://github.com/moronigranja/alabaster-android), commit f1cedd5.
- * MIT License, Copyright (c) 2026 Moroni Granja. Only the package name is changed.
+ * MIT License, Copyright (c) 2026 Moroni Granja. Changed: the package name; a motion event's
+ * axes, triggers and hat are published together ([GamepadState.batch]), and an axis is looked up
+ * with `InputDevice.getMotionRange` instead of a walk over every range.
  */
 package io.github.aerithmetiq.alabasterdroid.host
 
@@ -46,7 +48,11 @@ object Gamepad {
 
     fun onMotion(event: MotionEvent) {
         val device = event.device
-        state.setAxes(
+        state.batch { motion(event, device) }
+    }
+
+    private fun GamepadState.motion(event: MotionEvent, device: InputDevice?) {
+        setAxes(
             axisValue(event, device, MotionEvent.AXIS_X),
             axisValue(event, device, MotionEvent.AXIS_Y) * Y_SIGN,
             /* Right stick: the 8BitDo/Xbox layout reports Z/RZ, the Switch Pro Controller reports
@@ -54,10 +60,10 @@ object Gamepad {
             axisValue(event, device, MotionEvent.AXIS_Z, MotionEvent.AXIS_RX),
             axisValue(event, device, MotionEvent.AXIS_RZ, MotionEvent.AXIS_RY) * Y_SIGN
         )
-        state.setTrigger(
+        setTrigger(
             LEFT_TRIGGER, triggerAxis(event, device, MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_BRAKE)
         )
-        state.setTrigger(
+        setTrigger(
             RIGHT_TRIGGER, triggerAxis(event, device, MotionEvent.AXIS_RTRIGGER, MotionEvent.AXIS_GAS)
         )
         if (hasAxis(device, MotionEvent.AXIS_HAT_X) || hasAxis(device, MotionEvent.AXIS_HAT_Y)) {
@@ -71,7 +77,7 @@ object Gamepad {
             } else {
                 0f
             }
-            state.setHat(hatY < -0.5f, hatY > 0.5f, hatX < -0.5f, hatX > 0.5f)
+            setHat(hatY < -0.5f, hatY > 0.5f, hatX < -0.5f, hatX > 0.5f)
         }
     }
 
@@ -94,11 +100,10 @@ object Gamepad {
         return value.coerceIn(0f, 1f)
     }
 
-    private fun hasAxis(device: InputDevice?, axis: Int): Boolean {
-        if (device == null) return false
-        for (range in device.motionRanges) if (range.axis == axis) return true
-        return false
-    }
+    /* Any source's range for the axis, as the loop over `motionRanges` this replaced; without the
+     * iterator it allocated for each of the dozen lookups a motion event makes. */
+    private fun hasAxis(device: InputDevice?, axis: Int): Boolean =
+        device?.getMotionRange(axis) != null
 
     /** Android key codes for gamepad buttons -> W3C indices. */
     private fun keyIndex(keyCode: Int): Int? = when (keyCode) {

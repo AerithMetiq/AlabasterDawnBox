@@ -4,7 +4,8 @@
  * settings are read from the app twice a second instead of on every frame (see pollGamepads), and
  * the frame-rate gate keeps a running deadline, so a rate the screen cannot divide evenly (45 on a
  * 60 Hz panel) averages that rate instead of dropping to the next one down; and a Resolution chosen
- * in the launcher is stored before the engine boots (applyChosenResolution).
+ * in the launcher is stored before the engine boots (applyChosenResolution); and the pad's JSON is
+ * parsed only when the app sends a different one (see pollGamepads).
  */
 /*
  * Alabaster Dawn — Android WebView shim.
@@ -850,16 +851,28 @@
     var settingsDue = true;
     var heldFpsLimit = 0, heldViewAlign = "center", heldStatsEnabled = false;
 
+    /* Alabaster Droid: the payload the pad was last filled from. The app sends the same text until an
+     * input changes, which is most frames, and then the pooled pad already holds it: it is not parsed
+     * and copied again (about 20 objects of garbage a frame). */
+    var lastPadJson = null;
+
     function pollGamepads() {
         settingsDue = (settingsPolls++ % SETTINGS_EVERY) === 0;
         applyFpsLimit();
         applyViewAlign();
         updateStats();
-        var st = parseJson(call(function (b) { return b.getGamepadJson(); }, ""));
+        var raw = call(function (b) { return b.getGamepadJson(); }, "");
+        if (raw && raw === lastPadJson) {
+            pad.timestamp = now();
+            return padPool;
+        }
+        lastPadJson = null;
+        var st = parseJson(raw);
         if (!st) {
             pad.connected = false;
             return noPads;
         }
+        lastPadJson = raw;
         pad.connected = true;
         pad.timestamp = now();
         var axes = st.axes || [];

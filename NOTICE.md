@@ -54,23 +54,31 @@ the in-game menu and the diagnostics record.
 
 Reused, each file carrying that notice at its top:
 
-* `app/src/main/assets/ada-shim.js`, with two changes: the side menu's three settings are read from
-  the app twice a second instead of on every frame, which was costing frames, and the frame-rate
-  limit keeps a running deadline so a rate the screen cannot divide evenly averages out.
+* `app/src/main/assets/ada-shim.js`, with these changes: the side menu's three settings are read from
+  the app twice a second instead of on every frame, which was costing frames; the frame-rate
+  limit keeps a running deadline so a rate the screen cannot divide evenly averages out; a
+  Resolution chosen in the launcher is stored before the engine boots; and the controller's state
+  is parsed only when it has changed.
 * Everything in `app/src/main/java/io/github/aerithmetiq/alabasterdroid/host/`, and its unit tests in
   `app/src/test/java/io/github/aerithmetiq/alabasterdroid/host/`. Most files differ only in their
   package name. Adapted: `GameActivity.kt` (alabaster-android's `PortActivity` without its folder
   pickers and two-game entry screen), `GameIndex.kt`, `GameAssetHandler.kt` and `FsBridge.kt` (the
   game and saves are plain files here, not folders picked through Android's storage framework), 
   `SideMenuView.kt` (no game-selection row; it can be driven by a controller; a "Touch controls"
-  switch), `OnScreenPadView.kt` (that switch), `FpsLimit.kt` and
+  switch), `OnScreenPadView.kt` (that switch, and an idle timer that is not re-posted on every
+  input event), `FpsLimit.kt` and
   its test (the rates are 30/45/60/90/120, limited to what the screen can show) and `ShaderPrecision.kt` (the light, fog and combine
   shaders are served at high precision as well as the GUI's). `GameActivity.kt` also acts on the Back
   key at every Android version, leaves out the per-movement stick log, pauses the game while the
-  side menu is open and gives the controller to the menu. Each says so in its header.
+  side menu is open and gives the controller to the menu. `GameAssetHandler.kt` also streams the
+  files it does not rewrite and edits `bundle.js` as bytes. Changed for speed only:
+  `GamepadState.kt` and `Gamepad.kt` (the controller's state is written out once per input event,
+  without org.json) and `GameVersion.kt` (one constant made visible to the bundle edits). Each says
+  so in its header.
 * The in-game menu's icons (`ic_menu_*.xml`).
 
-`host/GameSettings.kt`, `host/InProcessRenderer.kt` and their tests are this project's own and are not from alabaster-android.
+`host/GameSettings.kt`, `host/InProcessRenderer.kt`, `host/BundleBytes.kt` and their tests (and
+`host/GamepadPayloadTest.kt`) are this project's own and are not from alabaster-android.
 
 The MIT License that covers that code:
 

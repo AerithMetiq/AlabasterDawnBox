@@ -1,12 +1,12 @@
 /*
  * From alabaster-android (https://github.com/moronigranja/alabaster-android), commit f1cedd5.
- * MIT License, Copyright (c) 2026 Moroni Granja. Only the package name is changed.
+ * MIT License, Copyright (c) 2026 Moroni Granja. Changed: the package name; [batch] publishes a
+ * controller event's several changes once, and [publish] writes the payload itself instead of
+ * building it from org.json objects (same JSON, and a non-finite number is sent as 0).
  */
 package io.github.aerithmetiq.alabasterdroid.host
 
 import kotlin.math.abs
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * Controller state in the W3C "standard gamepad" layout the engine's `GAMEPAD_MAPPING_STANDARD`
@@ -41,6 +41,12 @@ class GamepadState {
     @Volatile
     private var seen = false
 
+    /* Alabaster Droid: set while [batch] runs, so the changes inside it publish once, at its end. */
+    private var batching = false
+
+    /* Alabaster Droid: the payload is written here and copied out; only the input thread touches it. */
+    private val out = StringBuilder(PAYLOAD_CHARS)
+
     /**
      * `""` until a controller has been seen, so the shim can report no pads at all. An enabled
      * overlay is a pad in its own right: it must publish (all-neutral until a control is touched)
@@ -53,19 +59,34 @@ class GamepadState {
 
     fun release(button: Int) = setKey(button, false)
 
+    /**
+     * Alabaster Droid: applies [changes] and publishes once. One stick event sets the axes, both
+     * triggers and the hat, and publishing after each of the four built the payload four times on the
+     * UI thread for every motion event.
+     */
+    fun batch(changes: GamepadState.() -> Unit) {
+        batching = true
+        try {
+            changes()
+        } finally {
+            batching = false
+        }
+        publish()
+    }
+
     fun setAxes(leftX: Float, leftY: Float, rightX: Float, rightY: Float) {
         axes[0] = leftX
         axes[1] = leftY
         axes[2] = rightX
         axes[3] = rightY
         seen = true
-        publish()
+        changed()
     }
 
     fun setTrigger(button: Int, value: Float) {
         trigger[button] = value.coerceIn(0f, 1f)
         seen = true
-        publish()
+        changed()
     }
 
     fun setHat(up: Boolean, down: Boolean, left: Boolean, right: Boolean) {
@@ -74,13 +95,13 @@ class GamepadState {
         hatDown[2] = left
         hatDown[3] = right
         seen = true
-        publish()
+        changed()
     }
 
     private fun setKey(button: Int, down: Boolean) {
         keyDown[button] = down
         seen = true
-        publish()
+        changed()
     }
 
     /**
@@ -93,14 +114,14 @@ class GamepadState {
             overlayKeyDown.fill(false)
             overlayAxis.fill(0f)
         }
-        publish()
+        changed()
     }
 
     /** A stray overlay event after the toggle cannot resurrect state: ignored while disabled. */
     fun overlayButton(button: Int, down: Boolean) {
         if (!overlayEnabled || button < 0 || button >= BUTTONS) return
         overlayKeyDown[button] = down
-        publish()
+        changed()
     }
 
     fun overlayAxes(leftX: Float, leftY: Float, rightX: Float, rightY: Float) {
@@ -109,31 +130,43 @@ class GamepadState {
         overlayAxis[1] = leftY.coerceIn(-1f, 1f)
         overlayAxis[2] = rightX.coerceIn(-1f, 1f)
         overlayAxis[3] = rightY.coerceIn(-1f, 1f)
-        publish()
+        changed()
     }
 
+    private fun changed() {
+        if (!batching) publish()
+    }
+
+    /** `{"axes":[lx,ly,rx,ry],"buttons":[{"pressed":false,"value":0.0},...]}`, the shim's wire format. */
     private fun publish() {
-        val axesJson = JSONArray()
+        val json = out
+        json.setLength(0)
+        json.append("{\"axes\":[")
         for (axis in 0 until AXES) {
             /* Whichever source is deflected further wins: a neutral overlay must not mask a held
              * physical stick, and a centred physical stick must not cancel an overlay one. */
             val physical = axes[axis]
             val overlay = overlayAxis[axis]
-            axesJson.put((if (abs(overlay) > abs(physical)) overlay else physical).toDouble())
+            if (axis > 0) json.append(',')
+            number(json, if (abs(overlay) > abs(physical)) overlay else physical)
         }
-        val buttonsJson = JSONArray()
+        json.append("],\"buttons\":[")
         for (button in 0 until BUTTONS) {
             /* A digital press reads as {pressed: true, value: 1}; a trigger keeps its analogue value
              * and counts as pressed past halfway, which is what the engine's deadzones expect. */
             val digital = keyDown[button] || hatPressed(button) || overlayKeyDown[button]
             val analog = trigger[button]
-            buttonsJson.put(
-                JSONObject()
-                    .put("pressed", digital || analog > 0.5f)
-                    .put("value", (if (digital) 1f else analog).toDouble())
-            )
+            if (button > 0) json.append(',')
+            json.append("{\"pressed\":").append(digital || analog > 0.5f).append(",\"value\":")
+            number(json, if (digital) 1f else analog)
+            json.append('}')
         }
-        payload = JSONObject().put("axes", axesJson).put("buttons", buttonsJson).toString()
+        payload = json.append("]}").toString()
+    }
+
+    /** The value as org.json wrote it (a float widened to double); JSON has no NaN or infinity, so those are 0. */
+    private fun number(json: StringBuilder, value: Float) {
+        if (value.isFinite()) json.append(value.toDouble()) else json.append('0')
     }
 
     /** Buttons 12..15 are the D-pad, fed both by key events and by the hat axis. */
@@ -147,5 +180,8 @@ class GamepadState {
         const val AXES = 4
         const val DPAD_FIRST = 12
         const val DPAD_LAST = 15
+
+        /* Room for the whole payload: four axes and 17 buttons at their longest. */
+        private const val PAYLOAD_CHARS = 1024
     }
 }

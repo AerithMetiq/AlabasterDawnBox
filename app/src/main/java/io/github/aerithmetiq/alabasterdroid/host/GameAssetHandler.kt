@@ -1,7 +1,9 @@
 /*
  * From alabaster-android (https://github.com/moronigranja/alabaster-android), commit f1cedd5.
  * MIT License, Copyright (c) 2026 Moroni Granja. Changed: the package name; game files are read from disk rather than through SAF;
- * and the precision raise runs after the array lift.
+ * the precision raise runs after the array lift; a file no rewrite touches is streamed from disk
+ * instead of read whole first ([stream]); and `bundle.js` is edited as bytes ([BundleBytes]), its
+ * resolution ladder while the page's shader report is still awaited.
  */
 package io.github.aerithmetiq.alabasterdroid.host
 
@@ -12,6 +14,7 @@ import android.webkit.WebResourceResponse
 import androidx.webkit.WebViewAssetLoader
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.FileInputStream
 
 /**
  * Serves the picked game folder to the WebView under `https://appassets.androidplatform.net/game/`.
@@ -118,15 +121,27 @@ class GameAssetHandler(
             }
         }
 
+        /* Alabaster Droid: everything no rewrite can touch (images, audio, data: nearly all of the
+         * 1 175 files a boot asks for) is handed to the WebView as an open file, which it reads in
+         * pieces as it needs them. It used to be read whole into memory first, so the request was
+         * not answered until the last byte was in, and each sound passed through a heap array as
+         * large as the file. */
+        if (!rewritable(rel)) return stream(entry, rel)
+
         var body = read(entry) ?: return miss(rel)
         if (profile.rewrites) {
             /* `bundle.js` carries the engine's own `TEX_SLOT_COUNT`, and the preload scanner asks for
              * it before a document-start script's bridge call can land (measured on the Fold 7). Hold
              * that one request briefly so the decision is taken with the page's link outcome in hand; a
-             * page that never answers times out into the count-based plan, unchanged. */
+             * page that never answers times out into the count-based plan, unchanged.
+             *
+             * Alabaster Droid: the version and the resolution ladder do not depend on that answer, so
+             * they are done first, while it is still on its way; only the table size waits for it. */
             if (rel == BUNDLE_JS) {
+                body = phoneResolutionLadder(rel, body)
                 ShaderSlots.awaitReport(WAIT_FOR_REPORT_MS)
                 ShaderSlots.lock()
+                body = bundleSlots(rel, body)
             }
             /* Whether this file is lifted into the array spelling some fragment front ends accept does
              * *not* depend on the page's own compiler any more: the probe can accept declarations the
@@ -151,7 +166,6 @@ class GameAssetHandler(
             /* Alabaster Droid: after the array lift (which looks for the game's own precision line in
              * the water shaders), the shaders that need it are raised to highp; see [ShaderPrecision]. */
             if (rel.endsWith(".frag") || rel.endsWith(".vert")) body = ShaderPrecision.rewrite(rel, body)
-            if (rel == BUNDLE_JS) body = phoneResolutionLadder(rel, body)
             if (rel == OPTIONS_DB) body = relabelResolutions(rel, body)
             if (cacheable && !rewrite.put(rel, body) && cacheWarned.add(rel)) {
                 Log.w(TAG, "not caching $rel: the rewritten set no longer fits the rewrite cache")
@@ -162,6 +176,42 @@ class GameAssetHandler(
 
         val mime = mimeOf(rel)
         return ok(mime, encodingOf(mime), body)
+    }
+
+    /**
+     * Alabaster Droid: whether any of the rewrites in [serve] can change [rel]. Every other file is
+     * served as it is on disk ([stream]). This is the set those rewrites name: the entry page when the
+     * shim goes in by tag, the bundle, the option database, every shader stage, and the shared shader
+     * files the array lift edits.
+     */
+    private fun rewritable(rel: String): Boolean {
+        if (injectShim && rel == profile.indexHtml) return true
+        if (!profile.rewrites) return false
+        return rel == BUNDLE_JS || rel == OPTIONS_DB || rel.endsWith(".frag") || rel.endsWith(".vert") ||
+            ShaderArrays.rewrites(rel) || ShaderPrecision.rewrites(rel)
+    }
+
+    /**
+     * Alabaster Droid: a game file as it is on disk, as an open stream the WebView reads and closes.
+     * The request is answered as soon as the file is open, so the slow-asset line in [handle] now
+     * measures opening it, not reading it.
+     */
+    private fun stream(entry: GameEntry, rel: String): WebResourceResponse {
+        val input = try {
+            FileInputStream(entry.docId)
+        } catch (e: Exception) {
+            Log.e(TAG, "cannot read game document ${entry.docId}", e)
+            return miss(rel)
+        }
+        val length = try {
+            input.channel.size()
+        } catch (e: Exception) {
+            entry.size
+        }
+        val mime = mimeOf(rel)
+        val headers = HashMap<String, String>(1)
+        headers["Content-Length"] = length.toString()
+        return WebResourceResponse(mime, encodingOf(mime), 200, "OK", headers, input)
     }
 
     /** The profile's shim - the script the entry page runs before its own. */
@@ -190,21 +240,28 @@ class GameAssetHandler(
      * players' saved choice is unchanged; the game's own files are never modified.
      */
     private fun phoneResolutionLadder(rel: String, source: ByteArray): ByteArray {
-        val text = String(source, Charsets.UTF_8)
-        gameBuild = GameVersion.fromBundle(text)
-        val slots = ShaderSlots.slots()
-        val ladder = if (text.contains(RESOLUTION_MAP_ORIGINAL)) {
+        gameBuild = BundleBytes.version(source)
+        val ladder = BundleBytes.replace(source, RESOLUTION_MAP_ORIGINAL, RESOLUTION_MAP_PHONE)
+        if (ladder !== source) {
             Log.i(TAG, "rewriting the resolution ladder in $rel")
             ladderRewritten = true
-            text.replace(RESOLUTION_MAP_ORIGINAL, RESOLUTION_MAP_PHONE)
         } else {
             Log.w(TAG, "$rel has no '$RESOLUTION_MAP_ORIGINAL'; leaving it unmodified")
             ladderRewritten = false
-            text
         }
-        if (slots >= ShaderSlots.GAME) return ladder.toByteArray(Charsets.UTF_8)
+        return ladder
+    }
+
+    /**
+     * The engine's own `TEX_SLOT_COUNT`, set to what the served shaders carry (see [ShaderSlots]).
+     * Called once the decision is locked. Alabaster Droid: split out of [phoneResolutionLadder] so
+     * that the ladder can be done before the decision.
+     */
+    private fun bundleSlots(rel: String, source: ByteArray): ByteArray {
+        val slots = ShaderSlots.slots()
+        if (slots >= ShaderSlots.GAME) return source
         Log.i(TAG, "TEX_SLOT_COUNT $slots in $rel")
-        return ShaderSlots.rewrite(ladder, slots).toByteArray(Charsets.UTF_8)
+        return BundleBytes.slotTable(source, slots)
     }
 
     /**

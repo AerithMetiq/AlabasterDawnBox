@@ -167,7 +167,8 @@ app/src/main/java/io/github/aerithmetiq/alabasterdroid/
   host/GameSettings.kt    ours: the game's settings keys, shared by the launcher and the game process
   host/                   the game host, from alabaster-android (commit f1cedd5); see below
   host/InProcessRenderer.kt  ours: keeps the page out of a 32-bit renderer process (see Performance)
-app/src/main/assets/ada-shim.js   alabaster-android's Node/NW.js shim (settings polled twice a second, not per frame; frame gate keeps a running deadline)
+  host/BundleBytes.kt     ours: the host's edits to bundle.js, made on its bytes (unit-tested against the String rewrites)
+app/src/main/assets/ada-shim.js   alabaster-android's Node/NW.js shim (settings polled twice a second, not per frame; frame gate keeps a running deadline; pad JSON parsed only when it changes)
 app/src/main/res/layout/activity_launcher.xml   the launcher layout
 ```
 
@@ -190,8 +191,12 @@ later device fixes can be carried over file by file: change a file only when Ala
 to differ, and say what changed in the file's header and in `NOTICE.md`.
 
 - Verbatim apart from the package name: the shader rewrites (`ShaderSlots`, `ShaderArrays`,
-  `ShaderDither`, `ShaderVariants`, `RewriteCache`), `PortBridge`, `Gamepad*`, the
-  on-screen pad, `Diag*`, `LogFile`, `GameProfile` (its CrossCode entry is unused here) and the tests.
+  `ShaderDither`, `ShaderVariants`, `RewriteCache`), `PortBridge`, `OnScreenPadModel`, `Diag*`,
+  `LogFile`, `GameProfile` (its CrossCode entry is unused here) and the tests.
+- Changed for speed only (2026-10-21, see Performance): `GamepadState` (payload written with a
+  `StringBuilder`, one publish per controller event via `batch`), `Gamepad` (uses `batch`;
+  `getMotionRange` lookups), `OnScreenPadView` (idle timer posted once, not per input event; it also
+  has the "Touch controls" switch), `GameVersion` (`VERSION_MANAGER` made internal for `BundleBytes`).
 - Adapted: `GameActivity` (upstream `PortActivity` minus the SAF folder pickers and entry screen; it
   indexes `GameFiles.root` and launches the WebView), `GameIndex` (`GameTree.index` walks plain
   files; `GameEntry.docId` is an absolute path), `GameAssetHandler` and `FsBridge` (read files, no
@@ -292,6 +297,44 @@ At 960x540 in a busy area the game ran at 58-59 fps: about one dropped frame a s
   process as before; look for that record line first when a device reports poor performance.
   Measured with it at 1920x1080: 58.7-59.8 fps over four 20 s windows, GPU 100 % busy, the page
   thread waiting for a core 0.7 % of the time, boot in 6.1 s (8.5-11.3 s before).
+- **Host overhead cut further (2026-10-21; unit-tested; first record from the Nova the same day).** Graphics are
+  untouched: every shader fix and the bundle's ladder and `TEX_SLOT_COUNT` edits serve the same bytes
+  as before (`BundleBytesTest` compares them).
+  - Boot: the Nova's record showed `slowest=304ms terra/dist/bundle.js`, and the page can do nothing
+    before it has the bundle. `GameAssetHandler` now edits the bundle as bytes (`BundleBytes`: no
+    12.7 MB decode/encode) and does the version and the resolution ladder *before*
+    `ShaderSlots.awaitReport`, so only the table-size edit waits for the page's probe. On the PC's
+    JVM with a synthetic 12.7 MB bundle: 230-400 ms before, ~15-20 ms during the wait plus ~25-30 ms
+    after it.
+  - Boot and area loads: files no rewrite can touch (images, audio, data) are served as an open
+    `FileInputStream` instead of being read whole into a byte array first. Less heap churn in the
+    `:game` process, which also holds the renderer. The "slow asset" record line now times opening a
+    file, not reading it.
+  - Per frame: the shim skips `JSON.parse` and the copy when the pad payload is the same text as last
+    frame (the earlier CDP profile put `parseJson` at 0.2 % of the page's time; small, but free).
+  - UI thread, while a stick moves: one payload per motion event instead of four, no org.json
+    objects, no iterator per axis lookup, and the pad's idle timer is no longer removed and re-posted
+    on every event.
+  - Launcher: the title art is decoded only when its files change, not on every `onResume`.
+  - The Nova's first record with it (game 0.2.0-9, 1280x720, a 90 fps cap): `slowest=44ms
+    terra/dist/bundle.js`, against 304 ms in the 2026-10-12 record. That older record predates the
+    in-process renderer too, whose probe answers sooner (114 ms after loading against 194 ms), so
+    not all of the drop is the byte edits. Boot complete in 5823 ms with 1286 resources, against
+    5.9-6.1 s with 1836 resources on game 0.2.0-7: a different game build loading different
+    resources, so no boot claim either way. The same shader lifts ran, and `TEX_SLOT_COUNT 192
+    packed`. Not yet checked: controls (sticks, triggers, D-pad, on-screen pad).
+  - Frame times with it, measured the same day (game 0.2.0-9, 1920x1080, cap 60 on the 60 Hz mode, a
+    forest area mid-fight): 57.0 fps (one 600 ms stall, cause not logged) and 59.6 fps over two 20 s
+    windows, 8-9 frames over 25 ms in each; p50 and p99 16.7 ms. GPU 93-100 % busy at its top clock,
+    680 MHz (the firmware's mode holds the floor at 615), at 83.6-87.6 °C with no thermal throttling
+    yet (`thermal_pwrlevel 0`). The GPU is the whole limit at 1080p; host overhead is not. On this
+    screen the picture is 1280x720 device pixels, so 1080p is drawn at 2.25x the pixels shown and
+    scaled down: its gain is smoother lighting, fog and edges, not sharper art. Offered a 1600x900
+    rung (about 30 % fewer pixels than 1080p) or a narrower precision raise; AerithMetiq chose to
+    play at 1280x720 instead, so neither was built.
+  - Not changed, on purpose: the frame-rate cap with the switch off still asks for the screen's
+    fastest mode (120 Hz on the Nova when the system allows it). Whether the engine draws anything
+    new above 60 fps is still unknown; if it does not, capping at 60 would halve GPU work for free.
 - **Do not test by suspending the game's AudioContext**: with audio suspended the frame rate fell to
   47-50 fps, so the engine's pacing depends on the running audio clock and the comparison is void.
   The WebAudio thread (`AudioOutputDevice`) itself uses 40-45 % of a core.

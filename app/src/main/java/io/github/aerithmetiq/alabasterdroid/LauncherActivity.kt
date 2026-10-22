@@ -86,6 +86,8 @@ class LauncherActivity : AppCompatActivity() {
     private lateinit var avatar: ShapeableImageView
     private lateinit var gameArt: ImageView
     private lateinit var gameTitle: ImageView
+    /** Which title art files [loadGameArt] is showing (path, size, time), so a resume with the same ones decodes nothing. */
+    private var artShown: String? = null
     private lateinit var wordmark: TextView
     private lateinit var wordmarkDroid: TextView
 
@@ -515,14 +517,21 @@ class LauncherActivity : AppCompatActivity() {
      * launcher's own look when its file is not there.
      */
     private fun loadGameArt() {
+        val background = GameFiles.titleBackground(this)
+        val name = GameFiles.titleName(this)
+        /* Decoding the two pictures took the UI thread every time the launcher came back to the front,
+         * from Settings as well as from the game; they only change when the game files do. */
+        val shown = listOf(background, name).joinToString("|") { f -> f?.let { "${it.path}:${it.length()}:${it.lastModified()}" } ?: "-" }
+        if (shown == artShown) return
+        artShown = shown
         fun show(view: ImageView, file: File?): Boolean {
             val bitmap = file?.let { decodeArt(it) }
             view.visibility = if (bitmap != null) View.VISIBLE else View.GONE
             bitmap?.let { view.setImageBitmap(it) }
             return bitmap != null
         }
-        show(gameArt, GameFiles.titleBackground(this))
-        val named = show(gameTitle, GameFiles.titleName(this))
+        show(gameArt, background)
+        val named = show(gameTitle, name)
         wordmark.visibility = if (named) View.GONE else View.VISIBLE
         wordmarkDroid.visibility = wordmark.visibility
     }
