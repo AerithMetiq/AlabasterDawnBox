@@ -4,14 +4,20 @@ Guidance for Claude Code working in this repository. Read it before changing any
 
 ## What this is
 
-**Alabaster Droid**: an unofficial Android launcher that plays **Alabaster Dawn** (Radical Fish Games,
+**AlabasterDawnBox**: an unofficial Android launcher that plays **Alabaster Dawn** (Radical Fish Games,
 Steam app **3110760**, Early Access) on Android. The user signs in to Steam, the app downloads the copy
 their account owns, runs the game's web build (`terra/`) in a WebView, and syncs saves with Steam Cloud.
 Built for controller-first handhelds (the maintainer's devices: **Retroid Pocket Nova**, **AYN Odin 3**)
 and phones. Its launcher design follows CrossDroid's (a CrossCode launcher by dain98); none of
 CrossDroid's code is in it (hard rule 2).
 
-Package / applicationId: `io.github.aerithmetiq.alabasterdroid`. MIT licensed.
+**Renamed from Alabaster Droid on 2026-10-21**, app ID included (`io.github.aerithmetiq.alabasterdroid`
+→ `io.github.aerithmetiq.alabasterdawnbox`), so it installs as a new app: sign in again, download the
+game again, saves come back from Steam Cloud. The GitHub repository is `AerithMetiq/AlabasterDawnBox`;
+the local folder is still `~/AlabasterDroid` (Claude Code's notes for this project are keyed to it).
+Its sibling for CrossCode is **CrossCodeBox** (`~/CrossCodeBox`, built from this code base).
+
+Package / applicationId: `io.github.aerithmetiq.alabasterdawnbox`. MIT licensed.
 
 ## Who does what
 
@@ -91,7 +97,7 @@ update (needs a new build on Steam) and delete game files.
   default (`GameFiles.playingStatus`, Settings). Started with the game when it starts online,
   stopped in the launcher's `onResume`. Sets the persona Online and sends `notifyGamesPlayed`.
   Confirmed on the Nova (2026-10-12): after the two calls Steam pushes the account's own status as
-  `Online, game 3110760`, which the service logs (`adb logcat -s AlabasterDroid | grep "playing status"`).
+  `Online, game 3110760`, which the service logs (`adb logcat -s AlabasterDawnBox | grep "playing status"`).
   Trust those pushes, not `requestFriendInfo` on oneself: its answer said `Offline, game 0` seconds
   after a push said otherwise, which cost an hour of looking for a bug that was not there.
 - **Save backups can be restored** (`steam/SaveBackups.kt`, Settings → Steam Cloud saves →
@@ -151,7 +157,7 @@ update (needs a new build on Steam) and delete game files.
 ## Layout
 
 ```
-app/src/main/java/io/github/aerithmetiq/alabasterdroid/
+app/src/main/java/io/github/aerithmetiq/alabasterdawnbox/
   LauncherActivity.kt     home screen: sign-in, PLAY, offline toggle, profile refresh
   SettingsActivity.kt     game settings, Steam Cloud saves and diagnostics entries, notices, about
   SteamProbeActivity.kt   read-only Steam diagnostics using the saved login
@@ -185,7 +191,7 @@ app/src/main/res/layout/activity_launcher.xml   the launcher layout
 ./gradlew :app:assembleDebug        # app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:testDebugUnitTest    # JVM unit tests (ProbeReportTest, QrCodeFitTest, GameDownloadTest, CloudSavesTest, host/*)
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb logcat -s AlabasterDroid        # the app's log tag
+adb logcat -s AlabasterDawnBox        # the app's log tag
 ```
 
 Keep pure logic (parsing, sizing, decisions) in small Android-free functions with unit tests. Code that
@@ -194,7 +200,7 @@ needs a device or Steam must be described to AerithMetiq as untested until they 
 ## The game host (`host/`)
 
 Copied from alabaster-android rather than rewritten (hard rule 3). Keep it close to upstream so its
-later device fixes can be carried over file by file: change a file only when Alabaster Droid needs it
+later device fixes can be carried over file by file: change a file only when AlabasterDawnBox needs it
 to differ, and say what changed in the file's header and in `NOTICE.md`.
 
 - Verbatim apart from the package name: the shader rewrites (`ShaderSlots`, `ShaderArrays`,
@@ -241,7 +247,7 @@ to differ, and say what changed in the file's header and in `NOTICE.md`.
 - Saves: `GameFiles.root/userdata/` is the engine's `/saves`, so files land in
   `userdata/Saves/Default/…`, the Steam layout. The launcher syncs `userdata/Saves/`
   (`GameFiles.saves`) with Steam Cloud, only while the game's process is not running.
-- The host logs under the tag `RfPort` (upstream's): `adb logcat -s AlabasterDroid RfPort`. In the
+- The host logs under the tag `RfPort` (upstream's): `adb logcat -s AlabasterDawnBox RfPort`. In the
   game, Back opens the side menu; Troubleshoot there shows and shares the diagnostics record, which is
   also written to `userdata/` as a log file.
 
@@ -346,7 +352,7 @@ At 960x540 in a busy area the game ran at 58-59 fps: about one dropped frame a s
   47-50 fps, so the engine's pacing depends on the running audio clock and the comparison is void.
   The WebAudio thread (`AudioOutputDevice`) itself uses 40-45 % of a core.
 - **How to measure** (debug builds have WebView inspection on): with the game running,
-  `adb forward tcp:9222 localabstract:webview_devtools_remote_$(adb shell pidof io.github.aerithmetiq.alabasterdroid:game)`,
+  `adb forward tcp:9222 localabstract:webview_devtools_remote_$(adb shell pidof io.github.aerithmetiq.alabasterdawnbox:game)`,
   then a CDP client on `http://127.0.0.1:9222/json`: `Tracing.start` (categories `devtools.timeline`,
   `v8`, `toplevel`) and read the `FireAnimationFrame` durations on `CrRendererMain`; `Profiler` for
   where the time goes. Count frames with `requestAnimationFrame` deltas, not an fps overlay. Compare
@@ -392,7 +398,7 @@ At 960x540 in a busy area the game ran at 58-59 fps: about one dropped frame a s
   files first, every request to the next of all servers. A failed request is tried again on
   another server after a pause that doubles (0.5 s to 8 s, 8 attempts); the old code retried 6
   times at once and then failed the whole download. A run logs the servers it uses and
-  `download: N files, X MiB fetched in S s` (`adb logcat -s AlabasterDroid`).
+  `download: N files, X MiB fetched in S s` (`adb logcat -s AlabasterDawnBox`).
   - Old build on the Nova (Wi-Fi, full download): about 3 MiB/s for 150 s while the big files ran,
     then 0.3-0.5 MiB/s for the small-file tail; at 215 s (309.6 MiB) a chunk got HTTP 503 six times
     and the download failed; resuming took 83 s more. About 4 min 53 s in all.

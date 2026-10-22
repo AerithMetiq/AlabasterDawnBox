@@ -1,4 +1,4 @@
-# Alabaster Droid
+# AlabasterDawnBox
 
 Play **Alabaster Dawn** on Android: sign in with Steam, download the copy you own, and keep your saves
 in sync with **Steam Cloud**, so you can switch between PC and handheld. Built for controller-first
@@ -9,7 +9,7 @@ handhelds (tested on a Retroid Pocket Nova and an AYN Odin 3) and phones.
 
 ## Status
 
-Alabaster Droid is being built in milestones.
+AlabasterDawnBox is being built in milestones.
 
 | Milestone | What it adds | State |
 |---|---|---|

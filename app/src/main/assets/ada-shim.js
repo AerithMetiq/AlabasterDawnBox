@@ -1,6 +1,6 @@
 /*
  * From alabaster-android (https://github.com/moronigranja/alabaster-android), commit f1cedd5.
- * MIT License, Copyright (c) 2026 Moroni Granja. Changed for Alabaster Droid: the side menu's three
+ * MIT License, Copyright (c) 2026 Moroni Granja. Changed for AlabasterDawnBox: the side menu's three
  * settings are read from the app twice a second instead of on every frame (see pollGamepads), and
  * the frame-rate gate keeps a running deadline, so a rate the screen cannot divide evenly (45 on a
  * 60 Hz panel) averages that rate instead of dropping to the next one down; and a Resolution chosen
@@ -838,7 +838,7 @@
         catch (e) { return Date.now(); }
     }
 
-    /* Alabaster Droid: the three settings below (frame-rate cap, picture position, stats overlay) are
+    /* AlabasterDawnBox: the three settings below (frame-rate cap, picture position, stats overlay) are
      * the side menu's switches, and each read is a synchronous call into the app that blocks this
      * thread on a round trip to another process. Read on every frame they cost about 1.3 ms of the
      * 16.7 ms frame on a Retroid Pocket Nova (Snapdragon 8 Gen 2), where the game's own JavaScript
@@ -851,7 +851,7 @@
     var settingsDue = true;
     var heldFpsLimit = 0, heldViewAlign = "center", heldStatsEnabled = false;
 
-    /* Alabaster Droid: the payload the pad was last filled from. The app sends the same text until an
+    /* AlabasterDawnBox: the payload the pad was last filled from. The app sends the same text until an
      * input changes, which is most frames, and then the pooled pad already holds it: it is not parsed
      * and copied again (about 20 objects of garbage a frame). */
     var lastPadJson = null;
@@ -938,7 +938,7 @@
      * resolves to: 45 fps (22.2 ms, 20 ms shortened) is 40 on a 120 Hz panel and 30 on a 60 Hz one,
      * because the next vsync up is what is available.
      *
-     * Alabaster Droid: the last paragraph was alabaster-android's gate. This one keeps a running
+     * AlabasterDawnBox: the last paragraph was alabaster-android's gate. This one keeps a running
      * deadline instead of timing each frame from the one before: the next frame is due one interval
      * after the last one was *due*, not after it was served. A whole division of the refresh rate is
      * unchanged (30 on 60 Hz is still every second vsync), and a rate that is not one now averages
@@ -1420,7 +1420,7 @@
     })();
 
     /* ---- a Resolution chosen in the launcher ------------------------------
-     * Alabaster Droid: the launcher's settings can choose the game's Resolution, but the option lives
+     * AlabasterDawnBox: the launcher's settings can choose the game's Resolution, but the option lives
      * in this page's storage (see above). The app opens the game with `?adaPixelSize=N` once, N being
      * the rung (0 = 640x360 ... 4 = 2560x1440 on the ladder the host serves), and it is stored here,
      * at document start, before the engine reads it. Every other stored option is left alone. */

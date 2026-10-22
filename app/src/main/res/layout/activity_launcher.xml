@@ -81,7 +81,7 @@
                     android:layout_height="wrap_content"
                     android:fontFamily="serif"
                     android:letterSpacing="0.5"
-                    android:text="DROID"
+                    android:text="DAWNBOX"
                     android:textColor="@color/accent"
                     android:textSize="20sp" />
 

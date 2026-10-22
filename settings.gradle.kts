@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AlabasterDroid"
+rootProject.name = "AlabasterDawnBox"
 include(":app")

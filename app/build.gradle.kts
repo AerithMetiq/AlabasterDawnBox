@@ -12,11 +12,11 @@ val copyNotices = tasks.register<Copy>("copyNotices") {
 }
 
 android {
-    namespace = "io.github.aerithmetiq.alabasterdroid"
+    namespace = "io.github.aerithmetiq.alabasterdawnbox"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "io.github.aerithmetiq.alabasterdroid"
+        applicationId = "io.github.aerithmetiq.alabasterdawnbox"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

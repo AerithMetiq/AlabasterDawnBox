@@ -2,7 +2,7 @@
 
 ## This project
 
-Alabaster Droid: an unofficial Android launcher for Alabaster Dawn. MIT licensed (see `LICENSE`).
+AlabasterDawnBox: an unofficial Android launcher for Alabaster Dawn. MIT licensed (see `LICENSE`).
 
 The code was written by Claude (Anthropic's AI model, Claude Opus 5.5, in Claude Code) and reviewed and
 tested by AerithMetiq. Commits name Claude as the author and AerithMetiq as the committer.
@@ -62,8 +62,8 @@ Reused, each file carrying that notice at its top:
   limit keeps a running deadline so a rate the screen cannot divide evenly averages out; a
   Resolution chosen in the launcher is stored before the engine boots; and the controller's state
   is parsed only when it has changed.
-* Everything in `app/src/main/java/io/github/aerithmetiq/alabasterdroid/host/`, and its unit tests in
-  `app/src/test/java/io/github/aerithmetiq/alabasterdroid/host/`. Most files differ only in their
+* Everything in `app/src/main/java/io/github/aerithmetiq/alabasterdawnbox/host/`, and its unit tests in
+  `app/src/test/java/io/github/aerithmetiq/alabasterdawnbox/host/`. Most files differ only in their
   package name. Adapted: `GameActivity.kt` (alabaster-android's `PortActivity` without its folder
   pickers and two-game entry screen), `GameIndex.kt`, `GameAssetHandler.kt` and `FsBridge.kt` (the
   game and saves are plain files here, not folders picked through Android's storage framework), 
