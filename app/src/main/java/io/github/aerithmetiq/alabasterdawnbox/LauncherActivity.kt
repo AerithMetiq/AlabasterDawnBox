@@ -68,6 +68,10 @@ import java.util.concurrent.CompletableFuture
  */
 class LauncherActivity : AppCompatActivity() {
 
+    /** B is Back on the first press (see [Screens.bIsBack]). */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
+        Screens.bIsBack(this, event) || super.dispatchKeyEvent(event)
+
     private lateinit var store: LoginStore
 
     private lateinit var signedOut: View

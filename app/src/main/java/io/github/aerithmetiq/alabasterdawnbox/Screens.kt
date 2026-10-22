@@ -22,6 +22,21 @@ import com.google.android.material.button.MaterialButton
 /** Building blocks for the secondary screens, so they share the launcher's look without a layout each. */
 object Screens {
 
+    /**
+     * A controller's B leaves a launcher screen on the first press. Android turns B into Back only as
+     * a fallback when nothing handled the key, and on the Retroid Pocket Nova the launcher needed two
+     * presses (AerithMetiq, 2026-10-22), so each screen takes B itself, on its release, as Back. The
+     * on-screen keyboard still sees it first while it is open. Call from `dispatchKeyEvent`.
+     */
+    fun bIsBack(activity: androidx.activity.ComponentActivity, event: android.view.KeyEvent): Boolean {
+        if (event.keyCode != android.view.KeyEvent.KEYCODE_BUTTON_B) return false
+        if (event.action == android.view.KeyEvent.ACTION_UP && !event.isCanceled) {
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+        return true
+    }
+
+
     fun dp(context: Context, value: Int): Int = (value * context.resources.displayMetrics.density).toInt()
 
     /**

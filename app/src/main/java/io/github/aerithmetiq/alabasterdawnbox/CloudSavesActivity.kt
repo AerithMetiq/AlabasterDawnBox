@@ -28,6 +28,10 @@ import java.time.Instant
  */
 class CloudSavesActivity : AppCompatActivity() {
 
+    /** B is Back on the first press (see [Screens.bIsBack]). */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
+        Screens.bIsBack(this, event) || super.dispatchKeyEvent(event)
+
     @Volatile private var session: SteamSession? = null
     @Volatile private var leaving = false
     private lateinit var status: TextView

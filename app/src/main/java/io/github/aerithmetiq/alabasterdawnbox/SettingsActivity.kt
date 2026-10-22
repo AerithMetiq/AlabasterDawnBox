@@ -21,6 +21,10 @@ import android.widget.ScrollView
  */
 class SettingsActivity : AppCompatActivity() {
 
+    /** B is Back on the first press (see [Screens.bIsBack]). */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
+        Screens.bIsBack(this, event) || super.dispatchKeyEvent(event)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val ctx = this
