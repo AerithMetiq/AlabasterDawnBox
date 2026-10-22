@@ -204,12 +204,16 @@ later device fixes can be carried over file by file: change a file only when Ala
 to differ, and say what changed in the file's header and in `NOTICE.md`.
 
 - Verbatim apart from the package name: the shader rewrites (`ShaderSlots`, `ShaderArrays`,
-  `ShaderDither`, `ShaderVariants`, `RewriteCache`), `PortBridge`, `OnScreenPadModel`, `Diag*`,
+  `ShaderDither`, `ShaderVariants`, `RewriteCache`), `PortBridge`, `Diag*`,
   `LogFile`, `GameProfile` (its CrossCode entry is unused here) and the tests.
 - Changed for speed only (2026-10-21, see Performance): `GamepadState` (payload written with a
   `StringBuilder`, one publish per controller event via `batch`), `Gamepad` (uses `batch`;
   `getMotionRange` lookups), `OnScreenPadView` (idle timer posted once, not per input event; it also
   has the "Touch controls" switch), `GameVersion` (`VERSION_MANAGER` made internal for `BundleBytes`).
+- `OnScreenPadModel` (2026-10-21): with dynamic sticks (no fixed rings drawn) the stock D-pad and
+  L1/L2 mirror the face buttons and R1/R2. Before, the D-pad stayed inset for a left ring that was not
+  drawn while the face diamond hugged the right corner, so the pad looked off centre on the Nova's
+  4:3 screen (366 px from the left against 160 px from the right). Fixed sticks are unchanged.
 - Adapted: `GameActivity` (upstream `PortActivity` minus the SAF folder pickers and entry screen; it
   indexes `GameFiles.root` and launches the WebView), `GameIndex` (`GameTree.index` walks plain
   files; `GameEntry.docId` is an absolute path), `GameAssetHandler` and `FsBridge` (read files, no
