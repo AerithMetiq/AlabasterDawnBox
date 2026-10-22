@@ -249,7 +249,19 @@ class GameAssetHandler(
             Log.w(TAG, "$rel has no '$RESOLUTION_MAP_ORIGINAL'; leaving it unmodified")
             ladderRewritten = false
         }
-        return ladder
+        return exposeScene(rel, ladder)
+    }
+
+    /**
+     * AlabasterDawnBox: the engine's scene manager made reachable from the page as `window.__adaScene`,
+     * so the shim can tell when a cutscene runs (`isCutscene()`) and the touch controls can step aside.
+     * The bundle keeps it inside its own module; one statement is added after the line that makes it.
+     * Without that line (another game build) nothing changes and the controls simply stay.
+     */
+    private fun exposeScene(rel: String, source: ByteArray): ByteArray {
+        val out = BundleBytes.replace(source, SCENE_ORIGINAL, SCENE_EXPOSED)
+        if (out === source) Log.w(TAG, "$rel has no '$SCENE_ORIGINAL'; cutscenes will not hide the touch controls")
+        return out
     }
 
     /**
@@ -496,6 +508,8 @@ class GameAssetHandler(
          * probe answered in ~170 ms on the Fold 7. */
         private const val WAIT_FOR_REPORT_MS = 400L
         private const val OPTIONS_DB = "terra/data/database/options.json"
+        private const val SCENE_ORIGINAL = "const g_scene = new SceneManager();"
+        private const val SCENE_EXPOSED = "const g_scene = new SceneManager(); window.__adaScene = g_scene;"
         private const val RESOLUTION_MAP_ORIGINAL = "const RESOLUTION_MAP = [1, 2, 3, 4, 6];"
         private const val RESOLUTION_MAP_PHONE = "const RESOLUTION_MAP = [1, 1.5, 2, 3, 4];"
         private const val RESOLUTION_FIRST_LABEL = "{\"en_US\":\"640x360\",\"langID\":171}"

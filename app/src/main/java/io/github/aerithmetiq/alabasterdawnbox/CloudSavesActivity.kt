@@ -82,7 +82,9 @@ class CloudSavesActivity : AppCompatActivity() {
                 Screens.body(
                     ctx,
                     "Backups: before a sync (or a restore) replaces save files on this device, it copies " +
-                        "them to SaveBackups. Restoring puts those files back; nothing is sent to Steam until the next sync.",
+                        "them to SaveBackups. Before an upload replaces files in Steam Cloud, it downloads Steam's " +
+                        "copies first (listed as \"from Steam Cloud\"). Restoring puts the files back on this " +
+                        "device; nothing is sent to Steam until the next sync.",
                     topDp = 20,
                 )
             )

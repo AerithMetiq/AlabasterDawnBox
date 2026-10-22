@@ -80,6 +80,17 @@ object GameFiles {
 
     fun setPlayingStatus(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_PLAYING, on).apply()
 
+    /**
+     * Unlock the game's Steam achievements as it awards them. **Writes to Steam**; on by default, as in
+     * CrossCodeBox. Alabaster Dawn has no Steam achievements yet (2026-10-21), so nothing is sent until it does.
+     */
+    fun steamAchievements(context: Context): Boolean = prefs(context).getBoolean(KEY_ACHIEVEMENTS, true)
+
+    fun setSteamAchievements(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_ACHIEVEMENTS, on).apply()
+
+    /** Achievements the game awarded that Steam does not have yet, one name per line (see AchievementService). */
+    fun achievementQueue(context: Context): File = File(root(context), "achievements-queue.txt")
+
     /** The public build id Steam last reported, kept so an update is still offered when offline. */
     fun steamBuild(context: Context): String? = prefs(context).getString(KEY_STEAM_BUILD, null)
 
@@ -97,6 +108,7 @@ object GameFiles {
 
     private const val KEY_UPLOADS = "cloudUploads"
     private const val KEY_PLAYING = "playingStatus"
+    private const val KEY_ACHIEVEMENTS = "steamAchievements"
     private const val KEY_STEAM_BUILD = "steamBuild"
     private const val KEY_LAST_SYNC = "lastSync"
 }

@@ -131,6 +131,9 @@ class GameActivity : Activity() {
     @Volatile
     private var previousRecordCarried = false
 
+    /** AlabasterDawnBox: the vibrator, for the game's rumble. */
+    private val shake by lazy { ShakeVibrator(this) }
+
     /** The app's own log and frame clock; everything device-specific is reported through it. */
     private lateinit var diag: Diag
     private var assetHandler: GameAssetHandler? = null
@@ -356,6 +359,19 @@ class GameActivity : Activity() {
                 /* The page's shader self-test finishes asynchronously; show the record again once it
                  * carries the verdicts (FINDINGS §22.11). */
                 port.onShaderSelfTestDone = { runOnUiThread { if (!isFinishing) showDiagnostics() } }
+                /* AlabasterDawnBox: cutscenes hide the touch controls, rumble vibrates, and an
+                 * achievement the game awards goes to the launcher's process, which holds the Steam
+                 * login (see AchievementService). */
+                if (prefs.getBoolean(GameSettings.KEY_HIDE_IN_SCENES, GameSettings.HIDE_IN_SCENES_DEFAULT)) {
+                    port.onGameScene = { showing -> runOnUiThread { padView?.sceneHides = showing } }
+                }
+                if (prefs.getBoolean(GameSettings.KEY_VIBRATE, GameSettings.VIBRATE_DEFAULT)) {
+                    port.onVibrate = { ms, strength -> shake.vibrate(ms, strength) }
+                }
+                port.onAchievement = { name ->
+                    diag.line("achievement awarded: $name")
+                    io.github.aerithmetiq.alabasterdawnbox.AchievementService.unlock(applicationContext, name)
+                }
             },
             BRIDGE_NAME
         )
@@ -392,6 +408,8 @@ class GameActivity : Activity() {
             onToggle = { prefs.edit().putBoolean(KEY_PAD, it).apply() }
             onLayoutChanged = { padLayoutStore?.save(it) }
             onFirstTouch = { resumeAudio() }
+            alwaysSprint = prefs.getBoolean(GameSettings.KEY_ALWAYS_SPRINT, GameSettings.ALWAYS_SPRINT_DEFAULT)
+            transparency = prefs.getInt(GameSettings.KEY_TOUCH_TRANSPARENCY, GameSettings.TOUCH_TRANSPARENCY_DEFAULT)
         }
         padView = pad
         frame.addView(

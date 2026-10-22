@@ -32,11 +32,16 @@ The main button reads **DOWNLOAD** until the game is on the device, then **PLAY*
   device's saves when you leave the game is **off until you turn it on** (Settings → Steam Cloud saves),
   where a check lists what a sync would do with each file without doing it. When both sides changed
   you are asked which to keep; local saves that get replaced are copied to a backup folder first, and
-  nothing is ever deleted from Steam Cloud. "Play offline" skips all of it.
+  nothing is ever deleted from Steam Cloud. Before an upload replaces files in Steam Cloud, Steam's
+  copies are kept on the device too, and can be restored. "Play offline" skips all of it.
 - **Game updates and files**: the launcher offers an update when Steam has a newer build; the
   download runs in the background with a notification. Settings can verify or delete the game files.
 - **Game settings in the launcher** (Settings → Game): touch controls, frame-rate limit, resolution
-  and the rest of the in-game menu's settings.
+  and the rest of the in-game menu's settings. Also: vibration when the game rumbles the controller,
+  touch controls that step aside in cutscenes, a transparency slider, and a touch stick that always
+  counts as fully pushed (off by default).
+- **Steam achievements**, ready for when Alabaster Dawn has them (it has none on Steam yet): on by
+  default, Settings → Steam.
 - **Playing status** (optional, off by default): show as playing Alabaster Dawn on Steam.
 - **Steam diagnostics** (Settings): a read-only report of Alabaster Dawn's depots, Steam Cloud rules and
   your Cloud files, with Share. It changes nothing on Steam.

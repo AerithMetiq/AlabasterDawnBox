@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- The game's controller rumble, felt (Settings → Game, on by default). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- appCategory="game": tells Android this is a game, so a device's game mode and performance
          profile treat it as one. The game is limited by one busy thread that has to get a fast core. -->
@@ -58,6 +60,11 @@
         <!-- Shows the account as playing on Steam while the game runs (off unless turned on). -->
         <service
             android:name=".PlayingService"
+            android:exported="false" />
+
+        <!-- Unlocks the game's Steam achievements as it awards them (Settings → Steam). -->
+        <service
+            android:name=".AchievementService"
             android:exported="false" />
 
         <!-- The game itself, in a process of its own: leaving the game ends that process (as the

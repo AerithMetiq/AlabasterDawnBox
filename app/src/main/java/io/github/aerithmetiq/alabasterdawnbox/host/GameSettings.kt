@@ -30,6 +30,20 @@ object GameSettings {
     const val KEY_VIEW_ALIGN = "view_align"
     /** Whether the frame-rate / resolution / battery / temperature readout is drawn. */
     const val KEY_STATS = "stats_overlay"
+    /* AlabasterDawnBox's touch and vibration options (Settings → Game), read when the game starts.
+     * The same keys as CrossCodeBox's; CrossCode's dash-on-tap has no counterpart here. */
+    /** The touch stick always reports full tilt. Off here: Alabaster Dawn moves by the stick's tilt. */
+    const val KEY_ALWAYS_SPRINT = "always_sprint"
+    const val ALWAYS_SPRINT_DEFAULT = false
+    const val KEY_VIBRATE = "vibrate_on_shake"
+    const val VIBRATE_DEFAULT = true
+    /** Hide the touch controls in cutscenes (a tap then reaches the game, which advances text on a tap). */
+    const val KEY_HIDE_IN_SCENES = "hide_touch_in_scenes"
+    const val HIDE_IN_SCENES_DEFAULT = true
+    /** How see-through the touch controls are, 0 (solid) to 100 (invisible). */
+    const val KEY_TOUCH_TRANSPARENCY = "touch_transparency"
+    const val TOUCH_TRANSPARENCY_DEFAULT = 0
+
     /** Whether the frame rate is capped, and at what (see [FpsLimit]). */
     const val KEY_LIMIT_FPS = "limit_fps"
     const val KEY_FPS_LIMIT = "fps_limit"

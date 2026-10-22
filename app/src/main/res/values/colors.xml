@@ -15,5 +15,8 @@
     <color name="accent">#FFB547</color>
     <color name="on_accent">#1A1206</color>
 
+    <!-- The dot before "Signed in as" while Steam answers. -->
+    <color name="online">#4CAF50</color>
+
     <color name="ic_launcher_background">#1F2547</color>
 </resources>

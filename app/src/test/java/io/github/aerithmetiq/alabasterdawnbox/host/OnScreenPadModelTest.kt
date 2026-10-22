@@ -568,7 +568,7 @@ class OnScreenPadModelTest {
         }
     }
 
-    /* CrossCodeBox / AlabasterDawnBox: with no fixed rings drawn, the left cluster mirrors the right. */
+    /* AlabasterDawnBox / AlabasterDawnBox: with no fixed rings drawn, the left cluster mirrors the right. */
     @Test
     fun `with dynamic sticks the d-pad side mirrors the face side on a 4-3 screen`() {
         val m = model(1280f, 960f)
@@ -593,5 +593,47 @@ class OnScreenPadModelTest {
         val ring = m.shape(OnScreenPadModel.LEFT_STICK)
         val left = m.shape(OnScreenPadModel.DPAD_LEFT)
         assertTrue("the d-pad starts right of the left stick", left.x > ring.x)
+    }
+
+    /* AlabasterDawnBox: always sprint and dash on tap. */
+    @Test
+    fun `always sprint gives full tilt in the stick's direction, and the dead zone stays neutral`() {
+        val m = model(1280f, 960f)
+        m.dynamicSticks = false
+        val stick = m.shape(OnScreenPadModel.LEFT_STICK)
+        m.down(1, stick.x, stick.y)
+        m.move(1, stick.x + stick.radius * 0.3f, stick.y)
+        val partial = m.axes[0]
+        assertTrue("a light push walks without it", partial in 0.05f..0.5f)
+        m.alwaysSprint = true
+        m.move(1, stick.x + stick.radius * 0.3f, stick.y)
+        assertEquals(1f, m.axes[0], 0.001f)
+        m.move(1, stick.x + stick.radius * 0.2f, stick.y + stick.radius * 0.2f)
+        assertEquals(1f, hypot(m.axes[0], m.axes[1]), 0.001f)
+        assertEquals(m.axes[0], m.axes[1], 0.001f)
+        m.move(1, stick.x + 0.5f, stick.y)
+        assertEquals("inside the dead zone it is still neutral", 0f, m.axes[0], 0.001f)
+    }
+
+    @Test
+    fun `with dash on tap, sliding off L1 and back does not press it again`() {
+        val m = model(1280f, 960f)
+        val l1 = m.shape(OnScreenPadModel.L1)
+        val index = m.buttonIndex(OnScreenPadModel.L1)
+        fun slideOffAndBack(): Boolean {
+            m.down(1, l1.x, l1.y)
+            assertTrue(m.buttons[index])
+            m.move(1, l1.x + l1.halfWidth * 4, l1.y)
+            assertFalse(m.buttons[index])
+            m.move(1, l1.x, l1.y)
+            val again = m.buttons[index]
+            m.up(1)
+            return again
+        }
+        assertTrue("without the option it presses again", slideOffAndBack())
+        m.dashOnTap = true
+        assertFalse("with it, only a fresh touch presses", slideOffAndBack())
+        m.down(2, l1.x, l1.y)
+        assertTrue("a new tap still dashes", m.buttons[index])
     }
 }

@@ -113,6 +113,37 @@ update (needs a new build on Steam) and delete game files.
   passes it once as `?adaPixelSize=N`, and the shim stores it before the engine boots. The last
   resolution the engine reported is kept (`KEY_RESOLUTION_LAST`) for the launcher to show.
 
+**Parity with CrossCodeBox (2026-10-21).** AerithMetiq wants the two apps to match; `PARITY.md` lists
+every feature and where it stands in each. Brought over that day (shared code copied with the package
+renamed, so later fixes can be carried file by file):
+
+- **Steam achievements**, dormant: `steam/Achievements.kt`, `steam/SteamAchievements.kt`,
+  `AchievementService.kt`, `SteamSession` (`Purpose.ACHIEVEMENTS`, `loggedOffResult`, `runningGame`),
+  `PortBridge.unlockAchievement`, the greenworks stub's `activateAchievement` in `ada-shim.js`, Settings
+  → Steam (on by default, `GameFiles.steamAchievements`). Alabaster Dawn 0.2.0-9 has no Steam
+  achievements: its bundle calls greenworks only for the store page, and Steam answers a stats request
+  for 3110760 with `Fail`, which `SteamAchievements.read` takes as "no achievements" (the name is
+  dropped instead of retried). Checked on the Nova: a test name sent through greenworks went through
+  the game process, the queue and the service, and was dropped. **When the game ships achievements**:
+  the stub's `init` must answer true (it is false, as upstream's), after checking what else that build
+  asks of greenworks; then try a real unlock.
+- **Vibration** (`host/ShakeVibrator.kt`, `KEY_VIBRATE`, on): the engine rumbles through
+  `g_input.rightAxisPad.vibrationActuator` (`RumbleManager.playSingleEffect`: type `dual-rumble`,
+  `duration` in ms, magnitudes 0-1 already scaled by its `gamepad-rumble` option; only while the
+  current device is a gamepad). The shim's pad has such an actuator and calls `PortBridge.vibrate(ms,
+  max magnitude × 10)`. Checked on the Nova by a test effect over CDP: 300 ms at amplitude 0.8,
+  `Usage=MEDIA`. Not yet felt in play.
+- **Touch controls hide in cutscenes** (`KEY_HIDE_IN_SCENES`, on): `GameAssetHandler.exposeScene` adds
+  `window.__adaScene = g_scene;` after `const g_scene = new SceneManager();` in `bundle.js`, and the
+  shim's `watchScenes` polls `isCutscene()` four times a second. A tap advances text: the engine's
+  `Control.screenInteractUp` takes a left click as Confirm. Checked: the scene object is reachable
+  (`isCutscene=false` on the title screen). **Not yet seen in a real cutscene.**
+- **Transparency slider** (`KEY_TOUCH_TRANSPARENCY`) and **always full tilt** for the touch stick
+  (`KEY_ALWAYS_SPRINT`, **off** here: Alabaster Dawn moves by the stick's tilt). CrossCode's dash-on-tap
+  is not offered (its dash is not on L1/L2 here).
+- **The online dot** before "Signed in as" (`R.color.online`).
+- **Steam Cloud copies before an upload** and **added depots** (below).
+
 **Steam Cloud saves (milestone 4), how it works:**
 
 - The sync is three-way and per file (`steam/CloudSaves.kt`, pure and unit-tested): besides this
@@ -130,6 +161,11 @@ update (needs a new build on Steam) and delete game files.
   Steam Cloud saves (`CloudSavesActivity`), whose "Check now" is the dry run: it lists every file
   and what a sync would do, and changes nothing. With uploads off, changed files are counted and
   left; they stay "changed here" and go up once uploads are on.
+- **Before an upload replaces files in Steam Cloud**, the sync downloads Steam's copies into
+  `SaveBackups/<time>-steam/` ("from Steam Cloud" in the restore list); if it cannot, nothing is
+  uploaded. Each kind of backup keeps its newest 8. Upload confirmed on the Nova (2026-10-21, uploads
+  switched on for the test and off again): 3 `System.save` files sent, Steam's copies kept, and the
+  sync after the game found nothing left to do.
 - The app **never deletes a Steam Cloud file**. A save deleted on the device is left in the Cloud
   (and not fetched again until the Cloud copy changes); a file deleted in the Cloud is moved to the
   backup folder here. Zero-byte local files are ignored.
@@ -138,9 +174,8 @@ update (needs a new build on Steam) and delete game files.
   It sends the file uncompressed with `canEncrypt = false`, commits (or closes a failed transfer as
   failed), then reads the Cloud listing back and only counts the upload when the file is listed with
   the SHA-1 it sent. A download may come back as a one-entry zip; it is unpacked and checked against
-  Steam's SHA-1. Rewritten 2026-10-21 (hard rule 2). On the Nova that day the listing was confirmed
-  ("Check now": every file `same on both`, checksums matching); **download and upload not yet run**
-  (they run when a sync has something to move).
+  Steam's SHA-1. Rewritten 2026-10-21 (hard rule 2); listing, download and upload all confirmed on the
+  Nova that day.
 
 **What the device's diagnostics report showed (2026-10-12, public build 25724722):**
 
@@ -177,6 +212,9 @@ app/src/main/java/io/github/aerithmetiq/alabasterdawnbox/
   steam/SaveBackups.kt    local save backups: list, restore, prune (unit-tested)
   GameDownloadService.kt  the download as a foreground service, and GameDownloadState for the launcher
   PlayingService.kt       shows the account as playing on Steam while the game runs (opt-in)
+  AchievementService.kt   unlocks Steam achievements the game awards (dormant: the game has none yet)
+  steam/Achievements.kt, steam/SteamAchievements.kt  achievement decisions (unit-tested) and the Steam calls
+  host/ShakeVibrator.kt   ours: the game's controller rumble as device vibration
   host/GameSettings.kt    ours: the game's settings keys, shared by the launcher and the game process
   host/                   the game host, from alabaster-android (commit f1cedd5); see below
   host/InProcessRenderer.kt  ours: keeps the page out of a 32-bit renderer process (see Performance)
@@ -410,6 +448,13 @@ At 960x540 in a busy area the game ran at 58-59 fps: about one dropped frame a s
     of transfer, up to ~17 MiB/s, the small-file tail ~1.2 MiB/s), 16 requests retried, none failed.
     Steam offered 20 servers; the 2nd-ranked, `cache1-pit-pitx`, refused connections from this
     network (10 s connect timeouts), was demoted, and cost the first ~10 s.
+- **Added depots** (`GameDownload.extras`, shared with CrossCodeBox, where it fetches CrossCode's DLC):
+  after the depot with `terra/index.html`, every other depot of the app with a public manifest and no
+  `oslist` is added and its `terra/` files merged in; depots Steam refuses a key for are left out.
+  Alabaster Dawn has none (its depots all name an OS), so nothing changes here; `GameDownload` and
+  `GameDownloader` are CrossCodeBox's files with `WEB_ROOT = "terra"`. "Verify game files" re-checked
+  on the Nova (2026-10-21): one byte changed in a game file (same size) was found by its SHA-1 and
+  downloaded again.
 - `com.squareup.okhttp3:okhttp` is `compileOnly` (5.3.2, the version JavaSteam brings) for that client.
 - `com.google.protobuf:protobuf-java` is `compileOnly` (4.31.1): `SteamCloudFiles` reads a protobuf
   enum (a Cloud file's persist state; only `Persisted` files count as existing).

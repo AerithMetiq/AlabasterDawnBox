@@ -9,17 +9,29 @@ import java.util.Locale
  * The local save backups: a folder per moment (`yyyyMMdd-HHmmss`), each holding the save files that
  * were about to be replaced or removed, under their names below `Saves/`. A sync makes one before it
  * changes this device's saves ([CloudSync]); [restore] puts one back. Files only, no Steam.
+ *
+ * A folder whose name ends in [FROM_STEAM] holds Steam Cloud's copies of the files an upload was about
+ * to replace there ([CloudSync] downloads them first). Restoring one puts those versions on this
+ * device; the next sync then counts them as changed here.
  */
 object SaveBackups {
 
     class Backup(val name: String, val files: List<String>) {
-        /** "2026-10-12 19:18", or the folder's name when it is not one of ours. */
+        /** Steam Cloud's copies, kept before an upload replaced them (see [FROM_STEAM]). */
+        val fromSteam: Boolean get() = name.endsWith(FROM_STEAM)
+
+        /** "2026-10-12 19:18" (with "· from Steam Cloud" for [fromSteam]), or the folder's name when it is not one of ours. */
         val label: String
-            get() = runCatching { LABEL.format(LocalDateTime.parse(name, STAMP)) }.getOrDefault(name)
+            get() = runCatching {
+                LABEL.format(LocalDateTime.parse(name.removeSuffix(FROM_STEAM), STAMP)) + if (fromSteam) "  ·  from Steam Cloud" else ""
+            }.getOrDefault(name)
     }
 
     /** A new backup folder's name for [now]. */
     fun stamp(now: LocalDateTime = LocalDateTime.now()): String = STAMP.format(now)
+
+    /** A new folder's name for Steam Cloud's copies at [now]. */
+    fun steamStamp(now: LocalDateTime = LocalDateTime.now()): String = stamp(now) + FROM_STEAM
 
     /** The backups, newest first; empty folders are left out. */
     fun list(backups: File): List<Backup> =
@@ -46,12 +58,19 @@ object SaveBackups {
         return chosen.files.size
     }
 
-    /** Keeps the newest [KEEP] backup folders; their names sort by time. */
+    /**
+     * Keeps the newest [KEEP] backup folders of each kind (this device's, and Steam Cloud's copies), so
+     * the copies an upload makes every session do not push out the device's own; names sort by time.
+     */
     fun prune(backups: File) {
-        backups.listFiles { f -> f.isDirectory }?.sortedByDescending { it.name }?.drop(KEEP)?.forEach { it.deleteRecursively() }
+        val folders = backups.listFiles { f -> f.isDirectory }.orEmpty()
+        for (kind in folders.groupBy { it.name.endsWith(FROM_STEAM) }.values) {
+            kind.sortedByDescending { it.name }.drop(KEEP).forEach { it.deleteRecursively() }
+        }
     }
 
     const val KEEP = 8
+    const val FROM_STEAM = "-steam"
     private val STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss", Locale.US)
     private val LABEL = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.US)
 }

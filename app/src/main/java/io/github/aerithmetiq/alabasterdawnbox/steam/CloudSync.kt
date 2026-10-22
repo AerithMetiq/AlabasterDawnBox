@@ -9,7 +9,8 @@ import java.io.IOException
  *
  * - [check] is **read-only** on both sides: it lists Steam Cloud, hashes the local files and plans.
  * - [apply] changes this device (downloads, with every replaced file first copied to [backups]) and,
- *   only when `uploads` is true, **writes to Steam Cloud**. It never deletes a Steam Cloud file.
+ *   only when `uploads` is true, **writes to Steam Cloud**. It never deletes a Steam Cloud file, and
+ *   before it replaces one it downloads it into a backup folder of its own ([SaveBackups.FROM_STEAM]).
  *
  * Run it only while the game is not running. Every call blocks.
  *
@@ -84,7 +85,10 @@ class CloudSync(
         val toSend = steps.filter { it.action == SaveAction.UPLOAD }
         var uploaded = 0
         var error: String? = null
-        if (uploads) {
+        if (uploads && toSend.isNotEmpty()) {
+            error = keepSteamCopies(toSend, status)
+        }
+        if (uploads && error == null) {
             for (s in toSend) {
                 status("Uploading your saves to Steam Cloud (${uploaded + 1} of ${toSend.size})…")
                 try {
@@ -102,6 +106,27 @@ class CloudSync(
             }
         }
         return Outcome(fetched.size, uploaded, toSend.size - uploaded, error)
+    }
+
+    /**
+     * Downloads Steam Cloud's current copy of each file [toSend] will replace there, into a new
+     * [SaveBackups.steamStamp] folder, so an upload can be undone from this device. Returns why it could
+     * not, in which case nothing may be uploaded; null when the copies are kept (or there are none).
+     */
+    private fun keepSteamCopies(toSend: List<SaveStep>, status: (String) -> Unit): String? {
+        val replaced = toSend.filter { it.cloud != null }
+        if (replaced.isEmpty()) return null
+        return try {
+            status("Keeping a copy of the Steam Cloud saves an upload replaces…")
+            val folder = File(backups, SaveBackups.steamStamp())
+            for (s in replaced) {
+                writeAtomically(File(folder, s.name), cloud.download(s.cloud!!.copy(name = CloudSaves.cloudName(s.name))))
+            }
+            SaveBackups.prune(backups)
+            null
+        } catch (e: Exception) {
+            "could not keep a copy of the Steam Cloud saves first, so none were sent: ${SteamProbe.describe(e)}"
+        }
     }
 
     private fun saveBase(base: Map<String, String>) {

@@ -4,10 +4,13 @@ import java.util.Locale
 
 /**
  * The decisions of the game download, kept apart from Steam and Android so they can be unit-tested:
- * which depots to look in, where the web game (`terra/`) sits inside a depot, and which of a depot's
+ * which depots to look in, where the web game ([WEB_ROOT]) sits inside a depot, and which of a depot's
  * files are wanted and where they go.
  */
 object GameDownload {
+
+    /** The web game: the one folder of the Steam install that is downloaded (the rest is NW.js). */
+    const val WEB_ROOT = "terra"
 
     /** The engine's entry page; the depot that holds it is the one to download from. */
     const val ENTRY = "terra/index.html"
@@ -28,10 +31,34 @@ object GameDownload {
     }
 
     /**
-     * What comes before `terra/` in a depot's file names ("" when it sits at the depot's top), or null
+     * The depots added to the one that holds the game ([main]): the app's other depots with a public
+     * manifest that are not tied to a platform (no `oslist`), DLC included. Steam installs these on
+     * every platform alongside the platform's own depot, and their files land in the same folder.
+     * Depots of DLC the account does not own are refused a key and left out when downloading.
+     */
+    fun extras(depots: List<DepotSummary>, main: Int): List<DepotSummary> =
+        depots.filter { it.id != main && it.publicManifest?.toULongOrNull() != null && it.fromApp == null && list(it.oslist).isEmpty() }
+            .sortedBy { it.id }
+
+    /**
+     * The files of several depots in one map, by their path below the install folder. A later layer's
+     * file replaces an earlier one's at the same path, as an added depot's would in a Steam install.
+     * Also returns how many were replaced, for the log.
+     */
+    fun <T> merge(layers: List<Map<String, T>>): Pair<Map<String, T>, Int> {
+        val out = LinkedHashMap<String, T>()
+        var replaced = 0
+        for (layer in layers) for ((path, file) in layer) {
+            if (out.put(path, file) != null) replaced++
+        }
+        return out to replaced
+    }
+
+    /**
+     * What comes before [WEB_ROOT] in a depot's file names ("" when it sits at the depot's top), or null
      * when the depot does not hold the web game at all.
      */
-    fun terraPrefix(fileNames: Iterable<String>): String? =
+    fun webPrefix(fileNames: Iterable<String>): String? =
         fileNames.map(::normalize)
             .filter { it == ENTRY || it.endsWith("/$ENTRY") }
             .minByOrNull { it.length }
@@ -43,7 +70,7 @@ object GameDownload {
      */
     fun target(fileName: String, prefix: String): String? {
         val name = normalize(fileName)
-        if (!name.startsWith(prefix + "terra/")) return null
+        if (!name.startsWith("$prefix$WEB_ROOT/")) return null
         val relative = name.removePrefix(prefix)
         if (relative.split('/').any { it.isEmpty() || it == "." || it == ".." }) return null
         return relative

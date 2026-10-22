@@ -1,6 +1,8 @@
 /*
  * From alabaster-android (https://github.com/moronigranja/alabaster-android), commit f1cedd5.
- * MIT License, Copyright (c) 2026 Moroni Granja. Only the package name is changed.
+ * MIT License, Copyright (c) 2026 Moroni Granja. Changed: the package name, and AlabasterDawnBox's
+ * [unlockAchievement] (an achievement the game awarded), [vibrate] (a screen shake) and [gameScene]
+ * (a cutscene, conversation or Direct Link began or ended).
  */
 package io.github.aerithmetiq.alabasterdawnbox.host
 
@@ -33,6 +35,45 @@ class PortBridge(
      * JavaBridge thread, so the owner posts to the UI thread.
      */
     var onShaderSelfTestDone: ((String) -> Unit)? = null
+
+    /**
+     * AlabasterDawnBox: set by the owner to receive an achievement the game awarded, by its Steam name.
+     * Called on the JavaBridge thread, so it must return quickly.
+     */
+    var onAchievement: ((String) -> Unit)? = null
+
+    /** AlabasterDawnBox: set by the owner to hear of cutscenes; see [gameScene]. */
+    var onGameScene: ((Boolean) -> Unit)? = null
+
+    /**
+     * AlabasterDawnBox: the game started ([showing] true) or ended a cutscene, a conversation or a Direct
+     * Link. Sent by the shim only when it changes. Called on the JavaBridge thread.
+     */
+    @JavascriptInterface
+    fun gameScene(showing: Boolean) {
+        onGameScene?.invoke(showing)
+    }
+
+    /** AlabasterDawnBox: set by the owner to vibrate for a screen shake; see [vibrate]. */
+    var onVibrate: ((Int, Float) -> Unit)? = null
+
+    /**
+     * AlabasterDawnBox: the game shook the screen ([ms] long, -1 until stopped, with the game's own
+     * [strength], 0.5 to 15). Called on the JavaBridge thread.
+     */
+    @JavascriptInterface
+    fun vibrate(ms: Int, strength: Float) {
+        onVibrate?.invoke(ms, strength)
+    }
+
+    /** AlabasterDawnBox: the game awarded an achievement (greenworks' `activateAchievement`). False when nobody takes it. */
+    @JavascriptInterface
+    fun unlockAchievement(name: String): Boolean {
+        val take = onAchievement ?: return false
+        if (name.isBlank() || name.length > 128 || name.any { it < ' ' }) return false
+        take(name)
+        return true
+    }
 
     @JavascriptInterface
     fun getGamepadJson(): String {

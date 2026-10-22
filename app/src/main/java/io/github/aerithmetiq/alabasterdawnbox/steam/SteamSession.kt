@@ -12,6 +12,7 @@ import `in`.dragonbra.javasteam.steam.handlers.steamfriends.SteamFriends
 import `in`.dragonbra.javasteam.steam.handlers.steamfriends.callback.PersonaStateCallback
 import `in`.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails
 import `in`.dragonbra.javasteam.steam.handlers.steamuser.SteamUser
+import `in`.dragonbra.javasteam.steam.handlers.steamuser.callback.LoggedOffCallback
 import `in`.dragonbra.javasteam.steam.handlers.steamuser.callback.LoggedOnCallback
 import `in`.dragonbra.javasteam.steam.steamclient.SteamClient
 import `in`.dragonbra.javasteam.steam.steamclient.callbackmgr.CallbackManager
@@ -55,7 +56,7 @@ class SteamBusyException(result: EResult) : IOException("Steam is busy ($result)
  */
 class SteamSession(private val purpose: Purpose = Purpose.LAUNCHER) : Closeable {
 
-    enum class Purpose { LAUNCHER, DOWNLOAD, SAVES, PLAYING, DIAGNOSTICS }
+    enum class Purpose { LAUNCHER, DOWNLOAD, SAVES, PLAYING, DIAGNOSTICS, ACHIEVEMENTS }
 
     val client = if (purpose == Purpose.DOWNLOAD) SteamClient(downloadConfiguration()) else SteamClient()
     private val manager = CallbackManager(client)
@@ -82,6 +83,9 @@ class SteamSession(private val purpose: Purpose = Purpose.LAUNCHER) : Closeable 
 
     /** True once Steam has closed the connection (or it dropped); the session is then of no more use. */
     @Volatile var disconnected = false
+
+    /** Why Steam logged this session off, when it said so before disconnecting; null otherwise. */
+    @Volatile var loggedOffResult: EResult? = null
         private set
     private val closed = AtomicBoolean(false)
 
@@ -95,6 +99,7 @@ class SteamSession(private val purpose: Purpose = Purpose.LAUNCHER) : Closeable 
             ownPersona.completeExceptionally(IOException("Steam closed the connection"))
         },
         manager.subscribe(LoggedOnCallback::class.java) { loggedOn.complete(it) },
+        manager.subscribe(LoggedOffCallback::class.java) { loggedOffResult = it.result },
         manager.subscribe(PersonaStateCallback::class.java) { cb ->
             if (cb.friendId == client.steamID) {
                 ownPersona.complete(cb)
@@ -218,6 +223,19 @@ class SteamSession(private val purpose: Purpose = Purpose.LAUNCHER) : Closeable 
             ),
             EOSType.AndroidUnknown,
         )
+    }
+
+    /**
+     * Tells Steam this session is running [appId] (or nothing, with null) without touching the
+     * account's online status, so friends are not shown it going online. Steam's own client only
+     * changes a game's stats while the game runs (see SteamAchievements).
+     */
+    fun runningGame(appId: Int?) {
+        val apps = client.getHandler(SteamApps::class.java) ?: return
+        val games = if (appId == null) emptyList() else listOf(
+            GamePlayedInfo(gameId = appId.toLong(), processId = 0, ownerId = client.steamID?.accountID?.toInt() ?: 0, gameBuildId = 0)
+        )
+        apps.notifyGamesPlayed(games, EOSType.AndroidUnknown)
     }
 
     fun stopPlaying() {

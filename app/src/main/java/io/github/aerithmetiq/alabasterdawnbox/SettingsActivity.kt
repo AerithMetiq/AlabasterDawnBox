@@ -6,6 +6,7 @@ import android.content.res.ColorStateList
 import android.os.Bundle
 import android.widget.CheckBox
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import io.github.aerithmetiq.alabasterdawnbox.host.FpsLimit
 import io.github.aerithmetiq.alabasterdawnbox.host.GameSettings
 import io.github.aerithmetiq.alabasterdawnbox.host.LogFile
@@ -41,6 +42,23 @@ class SettingsActivity : AppCompatActivity() {
                     ctx,
                     "Off: Steam is not told when you play. On: while the game runs, your friends see you " +
                         "online and in Alabaster Dawn, and Steam counts the play time. Not used with Play offline.",
+                    topDp = 0,
+                )
+            )
+            addView(CheckBox(ctx).apply {
+                text = "Unlock my Alabaster Dawn achievements on Steam"
+                textSize = 15f
+                setTextColor(getColor(R.color.text_primary))
+                buttonTintList = ColorStateList.valueOf(getColor(R.color.accent))
+                isChecked = GameFiles.steamAchievements(ctx)
+                setOnCheckedChangeListener { _, on -> GameFiles.setSteamAchievements(ctx, on) }
+            })
+            addView(
+                Screens.body(
+                    ctx,
+                    "Alabaster Dawn has no Steam achievements yet. Once the game awards them, this unlocks " +
+                        "each one on your Steam account (on by default); earned offline, they go up once Steam " +
+                        "can be reached. Nothing is ever removed. Off: they stay in the game.",
                     topDp = 0,
                 )
             )
@@ -110,6 +128,42 @@ class SettingsActivity : AppCompatActivity() {
         val first = toggle("Touch controls on screen", GameSettings.KEY_TOUCH_CONTROLS, true)
         toggle("Hide the touch controls while a controller is used", GameSettings.KEY_HIDE_EXTERNAL_INPUT, true)
         toggle("Dynamic sticks (touch anywhere)", GameSettings.KEY_DYNAMIC_STICKS, true)
+        /* The same touch and vibration options as CrossCodeBox (CrossCode's dash-on-tap has no
+         * counterpart here). */
+        toggle("Always full speed with the touch stick", GameSettings.KEY_ALWAYS_SPRINT, GameSettings.ALWAYS_SPRINT_DEFAULT)
+        toggle("Vibrate when the controller rumbles", GameSettings.KEY_VIBRATE, GameSettings.VIBRATE_DEFAULT)
+        toggle("Hide the touch controls in cutscenes", GameSettings.KEY_HIDE_IN_SCENES, GameSettings.HIDE_IN_SCENES_DEFAULT)
+        fun transparencyLabel(value: Int) = "Touch controls transparency: $value %"
+        val transparencyText = Screens.body(ctx, transparencyLabel(
+            prefs.getInt(GameSettings.KEY_TOUCH_TRANSPARENCY, GameSettings.TOUCH_TRANSPARENCY_DEFAULT)), topDp = 8)
+            .apply { textSize = 15f; setTextColor(getColor(R.color.text_primary)) }
+        page.addView(transparencyText)
+        page.addView(SeekBar(ctx).apply {
+            max = 100
+            progress = prefs.getInt(GameSettings.KEY_TOUCH_TRANSPARENCY, GameSettings.TOUCH_TRANSPARENCY_DEFAULT)
+            keyProgressIncrement = 5
+            isFocusable = true
+            progressTintList = ColorStateList.valueOf(getColor(R.color.accent))
+            thumbTintList = ColorStateList.valueOf(getColor(R.color.accent))
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) {
+                    transparencyText.text = transparencyLabel(value)
+                    if (fromUser) prefs.edit().putInt(GameSettings.KEY_TOUCH_TRANSPARENCY, value).commit()
+                }
+                override fun onStartTrackingTouch(bar: SeekBar) {}
+                override fun onStopTrackingTouch(bar: SeekBar) {}
+            })
+        })
+        page.addView(
+            Screens.body(
+                ctx,
+                "Full speed: the touch stick counts as fully pushed however far it is moved. Vibrate: the " +
+                    "device vibrates when the game rumbles the controller, following the game's own rumble " +
+                    "option. Hidden in cutscenes, a tap goes to the game, which advances its text on a tap. " +
+                    "Transparency: 0 is solid, 100 invisible (the controls still work).",
+                topDp = 0,
+            )
+        )
         toggle("Show FPS / battery / temperature", GameSettings.KEY_STATS, false)
         /* A choice made here ends the log's automatic switch-off, as a tap in the game's menu does. */
         toggle("Keep a log with the saves", LogFile.PREF_KEY, true) { it.putBoolean(LogFile.PREF_SET_KEY, true) }

@@ -28,6 +28,36 @@ class GameDownloadTest {
         assertEquals(listOf(3110761, 3110762, 3110764), GameDownload.candidates(depots, "windows,linux").map { it.id })
     }
 
+    /** CrossCode's depots (CrossCodeBox, 2026-10-21): the same rule serves both apps. */
+    @Test
+    fun extrasAreTheOtherDepotsForEveryPlatformDlcIncluded() {
+        val depots = listOf(
+            depot(228987, "windows", manifest = null, fromApp = 228980),
+            depot(368341, "windows"),
+            depot(368342, "linux"),
+            depot(916190, null),
+            depot(916191, "macos", dlc = 960310),
+            depot(960310, null, dlc = 960310),
+        )
+        assertEquals(listOf(916190, 960310), GameDownload.extras(depots, main = 368341).map { it.id })
+    }
+
+    /** Alabaster Dawn's depots are all tied to a platform: nothing is added. */
+    @Test
+    fun alabasterDawnHasNoExtras() {
+        val depots = listOf(depot(3110761, "windows,linux"), depot(3110762, "windows"), depot(3110764, "linux"))
+        assertEquals(emptyList<Int>(), GameDownload.extras(depots, main = 3110761).map { it.id })
+    }
+
+    @Test
+    fun aLaterDepotsFileReplacesAnEarlierOnesAtTheSamePath() {
+        val (merged, replaced) = GameDownload.merge(
+            listOf(mapOf("terra/a.json" to "main", "terra/b.png" to "main"), mapOf("terra/a.json" to "dlc"))
+        )
+        assertEquals(mapOf("terra/a.json" to "dlc", "terra/b.png" to "main"), merged)
+        assertEquals(1, replaced)
+    }
+
     @Test
     fun candidatesLeaveOutDepotsThatCannotBeDownloadedForThisApp() {
         val depots = listOf(
@@ -42,9 +72,9 @@ class GameDownloadTest {
 
     @Test
     fun terraPrefixFindsTheEntryPageWhereverTheDepotKeepsIt() {
-        assertEquals("", GameDownload.terraPrefix(listOf("package.json", "terra/index.html", "terra/dist/bundle.js")))
-        assertEquals("package.nw/", GameDownload.terraPrefix(listOf("package.nw\\terra\\index.html", "nw.exe")))
-        assertNull(GameDownload.terraPrefix(listOf("nw.exe", "locales/en.pak", "subterra/index.html")))
+        assertEquals("", GameDownload.webPrefix(listOf("package.json", "terra/index.html", "terra/dist/bundle.js")))
+        assertEquals("package.nw/", GameDownload.webPrefix(listOf("package.nw\\terra\\index.html", "nw.exe")))
+        assertNull(GameDownload.webPrefix(listOf("nw.exe", "locales/en.pak", "subterra/index.html")))
     }
 
     @Test

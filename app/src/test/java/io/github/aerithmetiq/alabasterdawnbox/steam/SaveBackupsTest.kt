@@ -46,6 +46,23 @@ class SaveBackupsTest {
     }
 
     @Test
+    fun steamCloudCopiesAreLabelledAndPrunedApart() {
+        val backups = tmp.newFolder("SaveBackups")
+        for (day in 10..19) {
+            write(backups, "202610$day-120000/a.save", "here")
+            write(backups, "202610$day-120000${SaveBackups.FROM_STEAM}/a.save", "steam")
+        }
+        SaveBackups.prune(backups)
+        val list = SaveBackups.list(backups)
+        assertEquals(SaveBackups.KEEP, list.count { it.fromSteam })
+        assertEquals(SaveBackups.KEEP, list.count { !it.fromSteam })
+        assertEquals("20261019-120000${SaveBackups.FROM_STEAM}", list.first().name)
+        assertEquals("2026-10-19 12:00  ·  from Steam Cloud", list.first().label)
+        assertEquals("2026-10-19 12:00", list[1].label)
+        assertEquals("20261019-120000-steam", SaveBackups.steamStamp(java.time.LocalDateTime.of(2026, 10, 19, 12, 0)))
+    }
+
+    @Test
     fun aBackupThatIsNotThereRestoresNothing() {
         assertEquals(0, SaveBackups.restore(tmp.newFolder("Saves"), tmp.newFolder("SaveBackups"), "20260101-000000"))
     }

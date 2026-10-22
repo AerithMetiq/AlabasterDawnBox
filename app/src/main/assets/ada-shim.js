@@ -5,7 +5,9 @@
  * the frame-rate gate keeps a running deadline, so a rate the screen cannot divide evenly (45 on a
  * 60 Hz panel) averages that rate instead of dropping to the next one down; and a Resolution chosen
  * in the launcher is stored before the engine boots (applyChosenResolution); and the pad's JSON is
- * parsed only when the app sends a different one (see pollGamepads).
+ * parsed only when the app sends a different one (see pollGamepads); and, as in CrossCodeBox, the pad
+ * has a vibrationActuator whose rumble the app turns into vibration, greenworks passes an achievement
+ * on to the app, and cutscenes are reported so the touch controls can step aside (watchScenes).
  */
 /*
  * Alabaster Dawn — Android WebView shim.
@@ -773,14 +775,42 @@
                 isContext: function () { return true; }
             };
             case "./greenworks/greenworks":
+                /* AlabasterDawnBox: init stays false, as upstream's: the game (0.2.0) has no Steam
+                 * achievements and uses greenworks only for its store page. activateAchievement is
+                 * there for when it does; it then also needs init to answer true, which must be
+                 * checked against what else that build asks of greenworks. */
                 return {
                     init: function () { return false; },
                     activateGameOverlayToStore: noop,
-                    isSteamRunning: function () { return false; }
+                    isSteamRunning: function () { return false; },
+                    activateAchievement: function (name, ok) {
+                        var taken = call(function (b) { return b.unlockAchievement(String(name)); }, false) === true;
+                        if (taken && typeof ok === "function") setTimeout(ok, 0);
+                    },
+                    clearAchievement: noop
                 };
             default: return {};
         }
     };
+
+    /* AlabasterDawnBox: whether the game is in a cutscene (the engine's g_scene.isCutscene(), which the
+     * host exposes as window.__adaScene when it serves bundle.js). Checked four times a second and sent
+     * only when it changes; the app hides the touch controls then, and a tap reaches the game, which
+     * advances its text on a left click or Confirm (Control.screenInteractUp). */
+    (function watchScenes() {
+        if (!HAS_BRIDGE) return;
+        var shown = false;
+        setInterval(function () {
+            var now = false;
+            try {
+                var scene = window.__adaScene;
+                now = !!(scene && scene.isCutscene && scene.isCutscene());
+            } catch (e) { now = false; }
+            if (now === shown) return;
+            shown = now;
+            try { window.PortBridge.gameScene(now); } catch (e) { /* nothing to do */ }
+        }, 250);
+    })();
 
     var screen = {
         bounds: { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight },
@@ -830,6 +860,29 @@
         buttons: []
     };
     for (var bi = 0; bi < GP_BUTTONS; bi++) pad.buttons.push({ pressed: false, value: 0 });
+
+    /* AlabasterDawnBox: the game rumbles through the pad (RumbleManager.playSingleEffect): with a
+     * "dual-rumble" vibrationActuator it plays effects whose magnitudes (0-1) already follow its
+     * gamepad-rumble option and whose duration is in ms. The app vibrates the device for them (Settings
+     * → Game); the stronger magnitude times 10 matches the strength scale CrossCodeBox passes. */
+    pad.vibrationActuator = {
+        type: "dual-rumble",
+        effects: ["dual-rumble"],
+        playEffect: function (type, params) {
+            try {
+                var p = params || {};
+                var strength = Math.max(Number(p.strongMagnitude) || 0, Number(p.weakMagnitude) || 0);
+                var ms = Math.round(Number(p.duration) || 0);
+                if (HAS_BRIDGE && strength > 0 && ms > 0) {
+                    var go = function () { try { window.PortBridge.vibrate(ms, strength * 10); } catch (e) { /* never break the game */ } };
+                    var delay = Number(p.startDelay) || 0;
+                    if (delay > 0) setTimeout(go, delay); else go();
+                }
+            } catch (e) { /* a vibration must never break the game */ }
+            return Promise.resolve("complete");
+        },
+        reset: function () { return Promise.resolve("complete"); }
+    };
     var padPool = [pad];
     var noPads = [];
 

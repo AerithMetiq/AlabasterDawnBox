@@ -2,7 +2,9 @@
  * From alabaster-android (https://github.com/moronigranja/alabaster-android), commit f1cedd5.
  * MIT License, Copyright (c) 2026 Moroni Granja. Changed: the package name, AlabasterDawnBox's
  * [OnScreenPadView.touchControls] switch, which removes the whole overlay, and the idle timer in
- * [OnScreenPadView.noteExternalInput], which is posted once instead of again on every input event.
+ * [OnScreenPadView.noteExternalInput], which is posted once instead of again on every input event;
+ * and AlabasterDawnBox's [OnScreenPadView.sceneHides] (cutscenes, conversations, Direct Links) and
+ * [OnScreenPadView.transparency].
  */
 package io.github.aerithmetiq.alabasterdawnbox.host
 
@@ -108,6 +110,36 @@ class OnScreenPadView(context: Context) : View(context) {
             invalidate()
         }
 
+    /**
+     * AlabasterDawnBox: true while the game shows a cutscene, a conversation or a Direct Link (the shim
+     * reports it, see GameActivity). The controls and the pill row then step aside, so a tap reaches
+     * the game, which advances its text and picks its choices on a tap. Not while the editor is open.
+     */
+    var sceneHides = false
+        set(value) {
+            if (field == value) return
+            field = value
+            applyOverlay()
+            invalidate()
+        }
+
+    /** AlabasterDawnBox: how see-through the whole overlay is, 0 (solid) to 100 (invisible, still working). */
+    var transparency = 0
+        set(value) {
+            field = value.coerceIn(0, 100)
+            alpha = 1f - field / 100f
+        }
+
+    /** AlabasterDawnBox: see [OnScreenPadModel.alwaysSprint]. */
+    var alwaysSprint: Boolean
+        get() = model.alwaysSprint
+        set(value) { model.alwaysSprint = value }
+
+    /** AlabasterDawnBox: see [OnScreenPadModel.dashOnTap]. */
+    var dashOnTap: Boolean
+        get() = model.dashOnTap
+        set(value) { model.dashOnTap = value }
+
     /** True while a controller, mouse or keyboard is being used: the controls hide until it goes quiet. */
     var externalInputInUse = false
         private set
@@ -210,7 +242,9 @@ class OnScreenPadView(context: Context) : View(context) {
     /** Whether external input is hiding the overlay right now. */
     private fun externalInputHides(): Boolean = hideWithExternalInput && externalInputInUse
 
-    private fun controlsDrawn(): Boolean = padEnabled && !externalInputHides()
+    private fun sceneHidesNow(): Boolean = sceneHides && !model.editing
+
+    private fun controlsDrawn(): Boolean = padEnabled && !externalInputHides() && !sceneHidesNow()
 
     /**
      * Whether the pill row is drawn and can be hit. It hides with the controls while a controller,
@@ -220,7 +254,7 @@ class OnScreenPadView(context: Context) : View(context) {
      * RESET/DONE stay reachable for as long as they are needed. With the switch off the pill row
      * stays while external input is used.
      */
-    private fun pillsDrawn(): Boolean = !externalInputHides()
+    private fun pillsDrawn(): Boolean = !externalInputHides() && !sceneHidesNow()
 
     /** Whether the overlay is a pad right now: the controls are drawn and no editor is open. */
     private fun overlayActive(): Boolean = touchControls && controlsDrawn() && !model.editing

@@ -170,6 +170,7 @@ class LauncherActivity : AppCompatActivity() {
         showSyncStatus()
         /* The game has been left (or was never started): the playing status ends with it. */
         PlayingService.stop(this)
+        AchievementService.retry(this)
         syncAfterGame()
     }
 
@@ -219,10 +220,22 @@ class LauncherActivity : AppCompatActivity() {
         }
     }
 
+    /** Whether the last start-up logon reached Steam: the green dot before "Signed in as" (as in CrossCodeBox). */
+    @Volatile private var online = false
+
     /** "Signed in as <persona>", the name bright and bold against the dim label. */
     private fun accountLine(): CharSequence {
         val name = store.persona ?: store.lastAccount ?: "Steam user"
-        return SpannableStringBuilder("Signed in as ").apply {
+        return SpannableStringBuilder().apply {
+            /* A green dot while Steam answers. */
+            if (online) {
+                append("● ")
+                setSpan(
+                    ForegroundColorSpan(ContextCompat.getColor(this@LauncherActivity, R.color.online)),
+                    0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+            append("Signed in as ")
             val start = length
             append(name)
             setSpan(StyleSpan(Typeface.BOLD), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -450,6 +463,7 @@ class LauncherActivity : AppCompatActivity() {
             try {
                 s.connect()
                 s.logOn(login)
+                online = true
                 saveProfile(s)
                 /* While logged on anyway: is there a newer build of the game? Read-only. */
                 if (GameFiles.installed(this)) {
@@ -464,8 +478,10 @@ class LauncherActivity : AppCompatActivity() {
                     setStatus("Your Steam login has expired. Sign in again.")
                 }
             } catch (e: Throwable) {
+                online = false
                 /* Signing out mid-refresh closes this session on purpose; that is not "offline". */
                 if (!leaving && store.load() != null) {
+                    ui { render() }
                     Log.i(TAG, "profile refresh failed", e)
                     ui { setStatus("Couldn't reach Steam. You can still play offline.") }
                 }
