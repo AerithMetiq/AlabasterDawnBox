@@ -29,8 +29,8 @@ android {
         applicationId = "io.github.aerithmetiq.alabasterdawnbox"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 10000
+        versionName = "1.0.0"
     }
 
     sourceSets.getByName("main").assets.srcDir(noticesDir.get().asFile)

@@ -45,7 +45,8 @@ Package / applicationId: `io.github.aerithmetiq.alabasterdawnbox`. MIT licensed.
    from it, `steam/SteamCloudFiles.kt`, was written again that day from JavaSteam's API and the
    protocol facts below, without reading the old version. At AerithMetiq's request the history was
    rewritten the same day so that every commit carries the new version (force-pushed with the
-   `v0.1.0` tag). The `v0.1.0` pre-release APK on GitHub was built before that, from the old code.
+   `v0.1.0` tag). That pre-release had been built from the old code; at AerithMetiq's request it and
+   its tag were deleted on 2026-10-22, before 1.0.0 was published.
    The README still credits CrossDroid's launcher design (not code).
 3. **alabaster-android** (github.com/moronigranja/alabaster-android) is **MIT**, © 2026 Moroni Granja.
    Its code may be reused for milestone 3, but every reused file keeps its copyright notice, and the
@@ -259,7 +260,7 @@ one key for both apps, made 2026-10-22, certificate SHA-256 `42af9f5e…8320a`).
 unsigned. Debug builds keep the machine's debug key, so a release APK cannot be installed over a
 debug install (or the reverse) without uninstalling, which deletes the app's local data and the
 downloaded game: back up the saves first. Raise `versionCode` (and `versionName`) for every
-release; both apps are still 1 / 0.1.0.
+release (major × 10000 + minor × 100 + patch: 1.0.0 is 10000, released 2026-10-22).
 
 Keep pure logic (parsing, sizing, decisions) in small Android-free functions with unit tests. Code that
 needs a device or Steam must be described to AerithMetiq as untested until they run it.
