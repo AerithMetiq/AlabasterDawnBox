@@ -16,7 +16,7 @@ Dawn's `terra` engine) cannot be copied as they are: each needs its own look at 
 | Steam's copies kept before an upload (`-steam` backups) | yes, upload confirmed | yes, upload confirmed |
 | Playing status | yes | yes |
 | Steam achievements | dormant: the game has none on Steam; plumbing checked | yes, unlock confirmed |
-| Vibration from the game | rumble via the pad's `vibrationActuator`; test effect checked, not yet felt in play | screen shakes via `ig.rumble`; confirmed |
+| Vibration from the game | rumble via the pad's `vibrationActuator`; confirmed in play (2026-10-22) | screen shakes via `ig.rumble`; confirmed |
 | Touch controls hide in cutscenes | cutscenes (`g_scene.isCutscene()`); not yet seen in one | cutscenes, conversations, Direct Links; confirmed |
 | Touch controls transparency | yes | yes, confirmed |
 | Touch stick always full tilt | yes, off by default | "always sprint", on by default; reported working |

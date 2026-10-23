@@ -71,7 +71,7 @@ Reused, each file carrying that notice at its top:
   `SideMenuView.kt` (no game-selection row; it can be driven by a controller; a "Touch controls"
   switch), `OnScreenPadView.kt` (that switch, an idle timer that is not re-posted on every
   input event, hiding in cutscenes and a transparency setting), `OnScreenPadModel.kt` and its test
-  (with dynamic sticks the D-pad side mirrors the face-button side; an always-full-tilt touch stick;
+  (the D-pad side, left stick included, mirrors the face-button side; an always-full-tilt touch stick;
   L1/L2 pressed only on a fresh touch), `PortBridge.kt` (achievements, rumble and cutscenes from the
   page), `FpsLimit.kt` and
   its test (the rates are 30/45/60/90/120, limited to what the screen can show) and `ShaderPrecision.kt` (the light, fog and combine

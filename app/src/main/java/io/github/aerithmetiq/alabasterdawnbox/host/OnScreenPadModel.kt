@@ -1,7 +1,7 @@
 /*
  * From alabaster-android (https://github.com/moronigranja/alabaster-android), commit f1cedd5.
- * MIT License, Copyright (c) 2026 Moroni Granja. Changed: the package name; with dynamic sticks the
- * stock D-pad and L1/L2 mirror the face buttons and R1/R2 (see computeBase); and AlabasterDawnBox's
+ * MIT License, Copyright (c) 2026 Moroni Granja. Changed: the package name; the stock D-pad, left
+ * stick and L1/L2 mirror the face buttons, right stick and R1/R2 (see computeBase); and AlabasterDawnBox's
  * [OnScreenPadModel.alwaysSprint] and [OnScreenPadModel.dashOnTap].
  */
 package io.github.aerithmetiq.alabasterdawnbox.host
@@ -310,24 +310,22 @@ class OnScreenPadModel {
         val h = viewHeight
         val pad = u * EDGE_PAD
 
-        /* The left stick sits one radius plus the edge pad from the corner: any closer and its ring
-         * is clipped by the screen edge, leaving full deflection towards that corner unreachable. */
-        val corner = u * (STICK_RADIUS + EDGE_PAD)
-        circle(base[LEFT_STICK], corner, h - corner, u * STICK_RADIUS)
-        circle(base[RIGHT_STICK], w - u * 5.2f - pad, h - u * 1.7f - pad, u * STICK_RADIUS)
-
         /* Diamond geometry, the same face ordering the engine registers: Y top, A bottom, X left,
          * B right. */
         val faceX = w - u * 1.9f - pad
         val faceY = h - u * 1.9f - pad
+        val rightStickX = w - u * 5.2f - pad
+        val stickY = h - u * 1.7f - pad
+        circle(base[RIGHT_STICK], rightStickX, stickY, u * STICK_RADIUS)
 
-        /* With dynamic sticks there are no fixed rings, and the stock D-pad, kept clear of a left ring
-         * that is then not drawn, sat inset while the face diamond hugs the right corner: the pad
-         * looked off centre, most of all on a 4:3 screen (366 px from the left edge against 160 px from
-         * the right on a Retroid Pocket Nova). Then the D-pad and its shoulder pills mirror the face
-         * diamond and R1/R2 exactly. */
-        val dpadX = if (dynamicSticks) w - faceX else u * 4.8f + pad
-        val dpadY = if (dynamicSticks) faceY else h - u * 1.6f - pad
+        /* The left half mirrors the right: D-pad in the corner like the face diamond, left stick
+         * inside it like the right stick, L1/L2 over the D-pad like R1/R2. Upstream put the left
+         * stick in the corner and the D-pad inside it, which looked lopsided with fixed sticks and,
+         * with dynamic sticks (no ring drawn), left the D-pad off centre: 366 px from the left edge
+         * against 160 px from the right on a Retroid Pocket Nova. */
+        circle(base[LEFT_STICK], w - rightStickX, stickY, u * STICK_RADIUS)
+        val dpadX = w - faceX
+        val dpadY = faceY
         circle(base[DPAD_UP], dpadX, dpadY - u * CROSS_OFFSET, u * CROSS_RADIUS)
         circle(base[DPAD_DOWN], dpadX, dpadY + u * CROSS_OFFSET, u * CROSS_RADIUS)
         circle(base[DPAD_LEFT], dpadX - u * CROSS_OFFSET, dpadY, u * CROSS_RADIUS)
@@ -338,13 +336,14 @@ class OnScreenPadModel {
         circle(base[FACE_X], faceX - u * CROSS_OFFSET, faceY, u * CROSS_RADIUS)
         circle(base[FACE_B], faceX + u * CROSS_OFFSET, faceY, u * CROSS_RADIUS)
 
-        val l1Y = if (dynamicSticks) h - u * 3.85f - pad else h - u * 3.6f - pad
-        val l2Y = if (dynamicSticks) h - u * 4.75f - pad else h - u * 4.5f - pad
+        /* A row higher than upstream's D-pad pills, so a pill cannot sit on the Y (or up) key it
+         * points at. */
+        val l1Y = h - u * 3.85f - pad
+        val l2Y = h - u * 4.75f - pad
         pillShape(base[L1], dpadX, l1Y, u * SHOULDER_HALF_WIDTH, u * SHOULDER_HALF_HEIGHT)
         pillShape(base[L2], dpadX, l2Y, u * SHOULDER_HALF_WIDTH, u * SHOULDER_HALF_HEIGHT)
-        /* A row higher than the D-pad's, so the pill cannot sit on the Y key it points at. */
-        pillShape(base[R1], faceX, h - u * 3.85f - pad, u * SHOULDER_HALF_WIDTH, u * SHOULDER_HALF_HEIGHT)
-        pillShape(base[R2], faceX, h - u * 4.75f - pad, u * SHOULDER_HALF_WIDTH, u * SHOULDER_HALF_HEIGHT)
+        pillShape(base[R1], faceX, l1Y, u * SHOULDER_HALF_WIDTH, u * SHOULDER_HALF_HEIGHT)
+        pillShape(base[R2], faceX, l2Y, u * SHOULDER_HALF_WIDTH, u * SHOULDER_HALF_HEIGHT)
 
         pillShape(base[SELECT], w / 2f - u, h - u * 0.9f - pad, u * SMALL_HALF_WIDTH, u * SMALL_HALF_HEIGHT)
         pillShape(base[START], w / 2f + u, h - u * 0.9f - pad, u * SMALL_HALF_WIDTH, u * SMALL_HALF_HEIGHT)

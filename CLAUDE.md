@@ -132,7 +132,7 @@ renamed, so later fixes can be carried file by file):
   `duration` in ms, magnitudes 0-1 already scaled by its `gamepad-rumble` option; only while the
   current device is a gamepad). The shim's pad has such an actuator and calls `PortBridge.vibrate(ms,
   max magnitude × 10)`. Checked on the Nova by a test effect over CDP: 300 ms at amplitude 0.8,
-  `Usage=MEDIA`. Not yet felt in play.
+  `Usage=MEDIA`. AerithMetiq felt it in play on the Nova (2026-10-22).
 - **Touch controls hide in cutscenes** (`KEY_HIDE_IN_SCENES`, on): `GameAssetHandler.exposeScene` adds
   `window.__adaScene = g_scene;` after `const g_scene = new SceneManager();` in `bundle.js`, and the
   shim's `watchScenes` polls `isCutscene()` four times a second. A tap advances text: the engine's
@@ -256,10 +256,12 @@ to differ, and say what changed in the file's header and in `NOTICE.md`.
   `StringBuilder`, one publish per controller event via `batch`), `Gamepad` (uses `batch`;
   `getMotionRange` lookups), `OnScreenPadView` (idle timer posted once, not per input event; it also
   has the "Touch controls" switch), `GameVersion` (`VERSION_MANAGER` made internal for `BundleBytes`).
-- `OnScreenPadModel` (2026-10-21): with dynamic sticks (no fixed rings drawn) the stock D-pad and
-  L1/L2 mirror the face buttons and R1/R2. Before, the D-pad stayed inset for a left ring that was not
-  drawn while the face diamond hugged the right corner, so the pad looked off centre on the Nova's
-  4:3 screen (366 px from the left against 160 px from the right). Fixed sticks are unchanged.
+- `OnScreenPadModel` (2026-10-21, 2026-10-22): the left half mirrors the right. The stock D-pad and
+  L1/L2 mirror the face buttons and R1/R2, and the fixed left stick sits inside the D-pad as the right
+  one sits inside the face buttons. Upstream put the left stick in the corner with the D-pad inside
+  it: with dynamic sticks (no ring drawn) the pad looked off centre on the Nova's 4:3 screen (366 px
+  from the left against 160 px from the right), and with fixed sticks lopsided (reported in
+  CrossCodeBox, 2026-10-22). Same change in both apps.
 - Adapted: `GameActivity` (upstream `PortActivity` minus the SAF folder pickers and entry screen; it
   indexes `GameFiles.root` and launches the WebView), `GameIndex` (`GameTree.index` walks plain
   files; `GameEntry.docId` is an absolute path), `GameAssetHandler` and `FsBridge` (read files, no

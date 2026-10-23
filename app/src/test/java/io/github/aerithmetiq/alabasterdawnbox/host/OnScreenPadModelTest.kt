@@ -45,7 +45,7 @@ class OnScreenPadModelTest {
     }
 
     @Test
-    fun `the left stick is tangent to the screen edge, so its ring is fully reachable`() {
+    fun `the left stick's ring is fully on screen, so every deflection is reachable`() {
         val model = model()
         val stick = model.shape(OnScreenPadModel.LEFT_STICK)
         assertTrue("left edge", stick.x - stick.radius > 0f)
@@ -568,31 +568,34 @@ class OnScreenPadModelTest {
         }
     }
 
-    /* AlabasterDawnBox / AlabasterDawnBox: with no fixed rings drawn, the left cluster mirrors the right. */
+    /* AlabasterDawnBox / CrossCodeBox: the left cluster mirrors the right, with fixed sticks and dynamic ones. */
     @Test
-    fun `with dynamic sticks the d-pad side mirrors the face side on a 4-3 screen`() {
-        val m = model(1280f, 960f)
-        m.dynamicSticks = true
-        val w = 1280f
-        fun mirrored(left: Int, right: Int) {
-            assertEquals("x of $left", w - m.shape(right).x, m.shape(left).x, 0.01f)
-            assertEquals("y of $left", m.shape(right).y, m.shape(left).y, 0.01f)
+    fun `the left side mirrors the right side on a 4-3 screen`() {
+        for (dynamic in listOf(false, true)) {
+            val m = model(1280f, 960f)
+            m.dynamicSticks = dynamic
+            val w = 1280f
+            fun mirrored(left: Int, right: Int) {
+                assertEquals("dynamic=$dynamic x of $left", w - m.shape(right).x, m.shape(left).x, 0.01f)
+                assertEquals("dynamic=$dynamic y of $left", m.shape(right).y, m.shape(left).y, 0.01f)
+            }
+            mirrored(OnScreenPadModel.DPAD_UP, OnScreenPadModel.FACE_Y)
+            mirrored(OnScreenPadModel.DPAD_DOWN, OnScreenPadModel.FACE_A)
+            mirrored(OnScreenPadModel.DPAD_LEFT, OnScreenPadModel.FACE_B)
+            mirrored(OnScreenPadModel.DPAD_RIGHT, OnScreenPadModel.FACE_X)
+            mirrored(OnScreenPadModel.L1, OnScreenPadModel.R1)
+            mirrored(OnScreenPadModel.L2, OnScreenPadModel.R2)
+            if (!dynamic) mirrored(OnScreenPadModel.LEFT_STICK, OnScreenPadModel.RIGHT_STICK)
         }
-        mirrored(OnScreenPadModel.DPAD_UP, OnScreenPadModel.FACE_Y)
-        mirrored(OnScreenPadModel.DPAD_DOWN, OnScreenPadModel.FACE_A)
-        mirrored(OnScreenPadModel.DPAD_LEFT, OnScreenPadModel.FACE_B)
-        mirrored(OnScreenPadModel.DPAD_RIGHT, OnScreenPadModel.FACE_X)
-        mirrored(OnScreenPadModel.L1, OnScreenPadModel.R1)
-        mirrored(OnScreenPadModel.L2, OnScreenPadModel.R2)
     }
 
     @Test
-    fun `with fixed sticks the d-pad stays clear of the left ring`() {
+    fun `with fixed sticks the left stick sits inside the d-pad, as the right one inside the face buttons`() {
         val m = model(1280f, 960f)
         m.dynamicSticks = false
         val ring = m.shape(OnScreenPadModel.LEFT_STICK)
-        val left = m.shape(OnScreenPadModel.DPAD_LEFT)
-        assertTrue("the d-pad starts right of the left stick", left.x > ring.x)
+        val right = m.shape(OnScreenPadModel.DPAD_RIGHT)
+        assertTrue("the left stick starts right of the d-pad", ring.x - ring.radius > right.x + right.radius)
     }
 
     /* AlabasterDawnBox: always sprint and dash on tap. */
