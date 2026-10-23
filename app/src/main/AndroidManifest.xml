@@ -36,8 +36,12 @@
         android:label="@string/app_name"
         android:theme="@style/AppTheme">
 
+        <!-- singleTop: a start while the launcher is on top (the home screen, or ES-DE resuming the
+             app) reaches it as onNewIntent, so it learns who opened it last (ReturnTo). Without it,
+             an equal intent only brought the task forward and Back went to the first opener. -->
         <activity
             android:name=".LauncherActivity"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|navigation|uiMode"
             android:exported="true"
             android:screenOrientation="sensorLandscape"

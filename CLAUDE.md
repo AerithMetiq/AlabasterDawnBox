@@ -513,7 +513,11 @@ At 960x540 in a busy area the game ran at 58-59 fps: about one dropped frame a s
   recents is another app: with both Box apps open, B in one showed the other and leaving took a
   second B (the "double B" AerithMetiq reported). The opener is `Activity.referrer`, kept in the
   `launcher` preferences (`opener`); a start by the app itself keeps it. Checked on the Nova: icon,
-  home, the other app's icon, quick switch back, one B → home screen. Not yet tried from ES-DE.
+  home, the other app's icon, quick switch back, one B → home screen. The launcher is `singleTop`:
+  ES-DE resuming the app while the launcher was on top only brought the task forward, so Back went to
+  the first opener (AerithMetiq, 2026-10-22); now such a start arrives as `onNewIntent` and is logged
+  (`launcher: opened by …`). A start while the game or Settings is on top still only brings the task
+  forward, and the opener stays the previous one.
 - Landscape-first, but nothing may clip on 4:3 handhelds or phones; size dialogs from
   `resources.configuration.screenWidthDp/screenHeightDp` (see `QrCode.fit`).
 - UI text is plain and direct; say what happened and what to do next.

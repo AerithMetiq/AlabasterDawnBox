@@ -187,10 +187,15 @@ class LauncherActivity : AppCompatActivity() {
         rememberOpener()
     }
 
-    /** Keeps the package that started this launcher (see [ReturnTo.opener]); prefs, so a restart keeps it. */
+    /**
+     * Keeps the package that started this launcher (see [ReturnTo.opener]); prefs, so a restart keeps
+     * it. Called from onCreate and onNewIntent, where `referrer` is that start's sender.
+     */
     private fun rememberOpener() {
-        val opener = ReturnTo.opener(referrer?.host, packageName, prefs.getString(KEY_OPENER, null))
+        val starter = referrer?.host
+        val opener = ReturnTo.opener(starter, packageName, prefs.getString(KEY_OPENER, null))
         prefs.edit().putString(KEY_OPENER, opener).apply()
+        Log.i(TAG, "launcher: opened by ${starter ?: "unknown"}; Back leaves for ${opener ?: "the home screen"}")
     }
 
     /**
