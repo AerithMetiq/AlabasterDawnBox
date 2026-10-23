@@ -25,6 +25,7 @@ Dawn's `terra` engine) cannot be copied as they are: each needs its own look at 
 | Shader rewrites, in-process renderer | yes | renderer yes; shaders not needed (canvas 2D) |
 | Mod loader and mod browser | none exists for the game yet | CCLoader3, off by default; mod browser (CCModDB), add a file, remove; community mods loaded on the Nova |
 | Mod browser: sort (stars, name, author, updated), order, category and author filters | n/a | yes, checked |
+| Mod browser: show installed / updates, Update all | n/a | yes, unit-tested; not yet run with an update |
 | Launcher: B leaves on the first press | yes | yes |
 | "Last played" above the sync status (`GameFiles.lastPlayed`) | yes, not yet seen | yes, not yet seen |
 | Back returns to the app that opened the launcher (`ReturnTo`) | yes, checked | yes, checked |
