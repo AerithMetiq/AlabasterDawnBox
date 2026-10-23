@@ -1,6 +1,16 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+/* Release signing: keystore.properties at the repo root (storeFile, storePassword, keyAlias,
+ * keyPassword) names the release key, which lives outside the repo. Neither is ever committed
+ * (.gitignore). Without the file a release build is left unsigned; debug builds always use the
+ * machine's debug key, so a debug install and a release install cannot replace each other. */
+val releaseKey = rootProject.file("keystore.properties").takeIf { it.isFile }?.let { file ->
+    Properties().apply { file.inputStream().use { load(it) } }
 }
 
 /* The APK carries the notices it is distributed under: the repo's LICENSE and NOTICE.md are copied
@@ -25,9 +35,21 @@ android {
 
     sourceSets.getByName("main").assets.srcDir(noticesDir.get().asFile)
 
+    signingConfigs {
+        if (releaseKey != null) {
+            create("release") {
+                storeFile = file(releaseKey.getProperty("storeFile"))
+                storePassword = releaseKey.getProperty("storePassword")
+                keyAlias = releaseKey.getProperty("keyAlias")
+                keyPassword = releaseKey.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

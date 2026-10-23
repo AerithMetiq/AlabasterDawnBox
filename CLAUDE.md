@@ -253,6 +253,14 @@ so it is not part of CI.
 **CI** (`.github/workflows/tests.yml`, 2026-10-22): unit tests and a debug build on every push and pull
 request (JDK 21 on ubuntu-latest). Not yet run: it starts with the first push after it.
 
+Release builds (`./gradlew :app:assembleRelease`) are signed with the release key when
+`keystore.properties` exists at the repo root (git-ignored; it names `~/AndroidKeys/box-release.jks`,
+one key for both apps, made 2026-10-22, certificate SHA-256 `42af9f5e…8320a`). Without it they are
+unsigned. Debug builds keep the machine's debug key, so a release APK cannot be installed over a
+debug install (or the reverse) without uninstalling, which deletes the app's local data and the
+downloaded game: back up the saves first. Raise `versionCode` (and `versionName`) for every
+release; both apps are still 1 / 0.1.0.
+
 Keep pure logic (parsing, sizing, decisions) in small Android-free functions with unit tests. Code that
 needs a device or Steam must be described to AerithMetiq as untested until they run it.
 
