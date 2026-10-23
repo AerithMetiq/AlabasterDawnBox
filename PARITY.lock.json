@@ -1,0 +1,126 @@
+{
+  "differ": {
+    "app/src/main/AndroidManifest.xml": {
+      "diff": "205822bd823d846e",
+      "reason": "CrossCodeBox has the mod browser activity; comments name each game's vibration source; services in another order"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/AchievementService.kt": {
+      "diff": "2680d3fa6c713f70",
+      "reason": "CrossCodeBox takes the app id from TheGame (AlabasterDawnBox has no TheGame yet)"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/GameFiles.kt": {
+      "diff": "aa48e9fc1182a971",
+      "reason": "each game's folder, web root, title art and save folder; achievements wording"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/LauncherActivity.kt": {
+      "diff": "2b4f9e95299fe912",
+      "reason": "CrossCodeBox cuts its logo band from the game's logo atlas (TitleArt) and draws it unsmoothed"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/Screens.kt": {
+      "diff": "ef78efef00368b48",
+      "reason": "status bar colour: gold with dark icons here, navy with light icons in CrossCodeBox (AerithMetiq's choice)"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/SettingsActivity.kt": {
+      "diff": "d87119ce80ebed6e",
+      "reason": "per-game options: Resolution (terra) here; dash on tap and the Mods section in CrossCodeBox; achievements wording"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/SteamProbeActivity.kt": {
+      "diff": "b643412c7201d897",
+      "reason": "games probed: SteamGame.entries here, TheGame.steam in CrossCodeBox"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/host/GameActivity.kt": {
+      "diff": "5422be31017c1101",
+      "reason": "CrossCodeBox starts through CCLoader3 when mods are on, and has dash on tap; TheGame.host vs GameProfile.ALABASTER_DAWN"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/host/GameAssetHandler.kt": {
+      "diff": "855f3666bfd58bda",
+      "reason": "AlabasterDawnBox exposes the terra engine's scene manager for cutscene hiding; CrossCode hides through cc-shim.js"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/host/GameIndex.kt": {
+      "diff": "a3fcdffa37494e11",
+      "reason": "CrossCodeBox drops ./ from paths, which CCLoader3 builds"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/host/GameSettings.kt": {
+      "diff": "4ccb1c22a64c9102",
+      "reason": "per-game options and defaults (always sprint, dash on tap, mods)"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/host/OnScreenPadModel.kt": {
+      "diff": "d8569a318d34d6ea",
+      "reason": "comments only: what always sprint and dash on tap mean for each game"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/host/ShakeVibrator.kt": {
+      "diff": "0d91e73fc77177ef",
+      "reason": "comment only: rumble here, screen shakes in CrossCode"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/steam/CloudSaves.kt": {
+      "diff": "393faf478aad8e54",
+      "reason": "each game's Steam Cloud rules: Saves/ folders here, cc.sav* at the top level in CrossCode"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/steam/CloudSync.kt": {
+      "diff": "0f0231288b4464ce",
+      "reason": "CrossCodeBox syncs only cc.sav* files (CloudSaves.isSaveName)"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/steam/GameDownload.kt": {
+      "diff": "9f8c3186ac1c61de",
+      "reason": "web root: terra/ here, assets/ in CrossCode"
+    },
+    "app/src/main/java/io/github/aerithmetiq/<pkg>/steam/SaveBackups.kt": {
+      "diff": "83d3012dd3eed8ce",
+      "reason": "comment only: where saves live"
+    },
+    "app/src/main/res/drawable/ic_launcher_foreground.xml": {
+      "diff": "b2b0dcdd914cbf8a",
+      "reason": "each app's own icon"
+    },
+    "app/src/main/res/layout/activity_launcher.xml": {
+      "diff": "2595740ac15d43ba",
+      "reason": "wordmark text and colour, logo height, status bar comment"
+    },
+    "app/src/main/res/values/colors.xml": {
+      "diff": "66cb0a6f26e9f784",
+      "reason": "accent: dawn gold here, cyan in CrossCodeBox; CrossCodeBox's navy status bar"
+    },
+    "app/src/main/res/values/themes.xml": {
+      "diff": "316adea5058942ca",
+      "reason": "status bar comment (gold here, navy there)"
+    },
+    "app/src/test/java/io/github/aerithmetiq/<pkg>/steam/CloudSavesTest.kt": {
+      "diff": "1e79734fcba9286f",
+      "reason": "each game's Cloud names"
+    },
+    "app/src/test/java/io/github/aerithmetiq/<pkg>/steam/GameDownloadTest.kt": {
+      "diff": "292143272313a4c7",
+      "reason": "each game's web root and entry page"
+    },
+    "app/src/test/java/io/github/aerithmetiq/<pkg>/steam/SteamCloudFilesTest.kt": {
+      "diff": "ab7bc38212c049fd",
+      "reason": "each game's Cloud names"
+    }
+  },
+  "only": {
+    "alabasterdawnbox": {
+      "app/src/main/assets/ada-shim.js": "the terra engine's shim (alabaster-android)"
+    },
+    "crosscodebox": {
+      "app/src/main/assets/cc-shim.js": "CrossCode's shim (alabaster-android)",
+      "app/src/main/assets/ccloader3/LICENSE": "CCLoader3, shipped unchanged (mods)",
+      "app/src/main/assets/ccloader3/dist-ccmod-service-worker.js": "CCLoader3, shipped unchanged (mods)",
+      "app/src/main/assets/ccloader3/dist/core.js": "CCLoader3, shipped unchanged (mods)",
+      "app/src/main/assets/ccloader3/dist/runtime/assets/data/lang/sc/gui.en_US.json.patch": "CCLoader3, shipped unchanged (mods)",
+      "app/src/main/assets/ccloader3/dist/runtime/ccmod.json": "CCLoader3, shipped unchanged (mods)",
+      "app/src/main/assets/ccloader3/dist/runtime/main.js": "CCLoader3, shipped unchanged (mods)",
+      "app/src/main/assets/ccloader3/dist/runtime/media/icons.png": "CCLoader3, shipped unchanged (mods)",
+      "app/src/main/assets/ccloader3/main.css": "CCLoader3, shipped unchanged (mods)",
+      "app/src/main/assets/ccloader3/main.html": "CCLoader3, shipped unchanged (mods)",
+      "app/src/main/assets/ccloader3/metadata.json": "CCLoader3, shipped unchanged (mods)",
+      "app/src/main/java/io/github/aerithmetiq/<pkg>/ModBrowserActivity.kt": "mods: CrossCode only (no mod loader exists for Alabaster Dawn)",
+      "app/src/main/java/io/github/aerithmetiq/<pkg>/ModDb.kt": "mods: CrossCode only",
+      "app/src/main/java/io/github/aerithmetiq/<pkg>/Mods.kt": "mods: CrossCode only",
+      "app/src/main/java/io/github/aerithmetiq/<pkg>/TheGame.kt": "CrossCodeBox's game constants; AlabasterDawnBox still uses SteamGame/GameProfile directly",
+      "app/src/main/java/io/github/aerithmetiq/<pkg>/TitleArt.kt": "cuts CrossCode's logo from its atlas; Alabaster Dawn ships a title-name image",
+      "app/src/test/java/io/github/aerithmetiq/<pkg>/ModDbTest.kt": "mods: CrossCode only",
+      "app/src/test/java/io/github/aerithmetiq/<pkg>/ModsTest.kt": "mods: CrossCode only",
+      "app/src/test/java/io/github/aerithmetiq/<pkg>/TitleArtTest.kt": "cuts CrossCode's logo from its atlas"
+    }
+  }
+}

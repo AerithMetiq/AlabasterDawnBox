@@ -86,6 +86,19 @@ class SteamProbe(private val session: SteamSession) {
             } catch (e: Exception) {
                 out.add("cloud: could not list (${describe(e)})")
             }
+
+            progress("Reading ${game.displayName}'s achievements…")
+            try {
+                val state = SteamAchievements(session, game.appId).read()
+                val names = state.bits.keys
+                out.add("achievements: ${names.count { state.unlocked(it) }} of ${names.size} unlocked on Steam" +
+                    if (names.isEmpty()) " (Steam sent ${state.received})" else "")
+                for (name in names) {
+                    out.add("  [${if (state.unlocked(name)) "x" else " "}] $name" + (state.titles[name]?.takeIf { it != name }?.let { " ($it)" } ?: ""))
+                }
+            } catch (e: Exception) {
+                out.add("achievements: could not read (${describe(e)})")
+            }
         }
         return out.joinToString("\n")
     }

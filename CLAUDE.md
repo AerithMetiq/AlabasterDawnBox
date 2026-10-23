@@ -241,6 +241,15 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb logcat -s AlabasterDawnBox        # the app's log tag
 ```
 
+Parity with CrossCodeBox (`~/CrossCodeBox`, `PARITY.md`):
+
+**`python3 tools/parity.py`** (2026-10-22, the same file in both repositories) compares every file
+under `app/src` with the other app's, the names that differ by design replaced, and fails on any
+difference not recorded in `PARITY.lock.json` (a reason and a fingerprint per file; also the files
+only one app has). Run it after a change; carry the change over, or run `--accept` (writes both
+repositories' lock) and replace the TODO reason. It needs both repositories checked out side by side,
+so it is not part of CI.
+
 Keep pure logic (parsing, sizing, decisions) in small Android-free functions with unit tests. Code that
 needs a device or Steam must be described to AerithMetiq as untested until they run it.
 
