@@ -171,6 +171,10 @@ object CloudSaves {
         return if (changed > 0) "$synced · ${files(changed)} changed here since" else synced
     }
 
+    /** The line above the sync status: when the game was last played, or null if never. */
+    fun lastPlayed(nowMs: Long, playedMs: Long): String? =
+        if (playedMs <= 0) null else "Last played ${ago(nowMs - playedMs)}"
+
     private fun ago(ms: Long): String {
         val minutes = ms / 60_000
         return when {

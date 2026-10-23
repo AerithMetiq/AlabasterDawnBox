@@ -221,6 +221,11 @@ class LauncherActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        /* Back from the game: it was played until now. */
+        if (prefs.getBoolean(KEY_IN_GAME, false)) {
+            prefs.edit().putBoolean(KEY_IN_GAME, false).apply()
+            GameFiles.setLastPlayed(this, System.currentTimeMillis())
+        }
         loadGameArt()
         updatePlay()
         showDownload()
@@ -643,7 +648,8 @@ class LauncherActivity : AppCompatActivity() {
 
     private fun startGame(online: Boolean) {
         /* Remembered on disk: Android may stop the launcher while the game runs. */
-        prefs.edit().putBoolean(KEY_SYNC_AFTER_GAME, online).apply()
+        prefs.edit().putBoolean(KEY_SYNC_AFTER_GAME, online).putBoolean(KEY_IN_GAME, true).apply()
+        GameFiles.setLastPlayed(this, System.currentTimeMillis())
         if (online && GameFiles.playingStatus(this)) PlayingService.start(this)
         startActivity(Intent(this, GameActivity::class.java))
     }
@@ -851,17 +857,22 @@ class LauncherActivity : AppCompatActivity() {
             .show()
     }
 
-    /** The standing line under PLAY: when the saves were last in step with Steam Cloud. */
+    /** The standing lines under PLAY: when the game was last played, and when the saves were last in step with Steam Cloud. */
     private fun showSyncStatus() {
-        if (store.load() == null || !GameFiles.installed(this)) {
+        if (!GameFiles.installed(this)) {
             syncStatus.text = ""
             return
         }
+        val signedIn = store.load() != null
         Thread({
-            val changed = runCatching {
-                CloudSaves.changedSince(CloudSync.local(GameFiles.saves(this)), CloudSync.base(GameFiles.syncBase(this)))
-            }.getOrDefault(0)
-            val text = CloudSaves.syncStatus(System.currentTimeMillis(), GameFiles.lastSync(this), changed)
+            val now = System.currentTimeMillis()
+            val sync = if (!signedIn) null else {
+                val changed = runCatching {
+                    CloudSaves.changedSince(CloudSync.local(GameFiles.saves(this)), CloudSync.base(GameFiles.syncBase(this)))
+                }.getOrDefault(0)
+                CloudSaves.syncStatus(now, GameFiles.lastSync(this), changed)
+            }
+            val text = listOfNotNull(CloudSaves.lastPlayed(now, GameFiles.lastPlayed(this)), sync).joinToString("\n")
             ui { syncStatus.text = text }
         }, "sync-status").start()
     }
@@ -886,6 +897,8 @@ class LauncherActivity : AppCompatActivity() {
         const val TAG = "AlabasterDawnBox"
         const val KEY_OFFLINE = "playOffline"
         const val KEY_SYNC_AFTER_GAME = "syncAfterGame"
+        /** Set while the game was started and the launcher has not seen it left, for [GameFiles.lastPlayed]. */
+        const val KEY_IN_GAME = "inGame"
         /** The package that started the launcher, for Back ([ReturnTo]). */
         const val KEY_OPENER = "opener"
     }

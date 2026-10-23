@@ -104,6 +104,11 @@ object GameFiles {
 
     fun setLastSync(context: Context, at: Long) = prefs(context).edit().putLong(KEY_LAST_SYNC, at).apply()
 
+    /** When the game was last played (left, or started if its end was not seen), in epoch milliseconds; 0 for never. */
+    fun lastPlayed(context: Context): Long = prefs(context).getLong(KEY_LAST_PLAYED, 0)
+
+    fun setLastPlayed(context: Context, at: Long) = prefs(context).edit().putLong(KEY_LAST_PLAYED, at).apply()
+
     private fun prefs(context: Context) = context.getSharedPreferences("launcher", Context.MODE_PRIVATE)
 
     private const val KEY_UPLOADS = "cloudUploads"
@@ -111,4 +116,5 @@ object GameFiles {
     private const val KEY_ACHIEVEMENTS = "steamAchievements"
     private const val KEY_STEAM_BUILD = "steamBuild"
     private const val KEY_LAST_SYNC = "lastSync"
+    private const val KEY_LAST_PLAYED = "lastPlayed"
 }

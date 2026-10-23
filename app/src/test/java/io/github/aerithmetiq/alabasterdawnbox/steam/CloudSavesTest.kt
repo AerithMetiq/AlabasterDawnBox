@@ -152,6 +152,9 @@ class CloudSavesTest {
         assertEquals("Synced with Steam Cloud 5 minutes ago · 3 save files changed here since", CloudSaves.syncStatus(now, now - 5 * 60_000, 3))
         assertEquals("Synced with Steam Cloud 3 hours ago · 1 save file changed here since", CloudSaves.syncStatus(now, now - 3 * 3_600_000L, 1))
         assertEquals("Synced with Steam Cloud 4 days ago", CloudSaves.syncStatus(now, now - 4 * 86_400_000L, 0))
+        assertEquals(null, CloudSaves.lastPlayed(now, 0))
+        assertEquals("Last played just now", CloudSaves.lastPlayed(now, now - 10_000))
+        assertEquals("Last played 2 hours ago", CloudSaves.lastPlayed(now, now - 2 * 3_600_000L - 60_000))
     }
 
     @Test

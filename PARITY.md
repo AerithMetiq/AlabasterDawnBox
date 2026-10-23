@@ -26,6 +26,7 @@ Dawn's `terra` engine) cannot be copied as they are: each needs its own look at 
 | Mod loader and mod browser | none exists for the game yet | CCLoader3, off by default; mod browser (CCModDB), add a file, remove; community mods loaded on the Nova |
 | Mod browser: sort (stars, name, author, updated), order, category and author filters | n/a | yes, checked |
 | Launcher: B leaves on the first press | yes | yes |
+| "Last played" above the sync status (`GameFiles.lastPlayed`) | yes, not yet seen | yes, not yet seen |
 | Back returns to the app that opened the launcher (`ReturnTo`) | yes, checked | yes, checked |
 | Side menu: a held direction repeats (`holdMenuDirection`) | yes | yes, confirmed |
 | Launcher logo cut to its own columns | n/a (the game ships a title-name image) | yes |
