@@ -28,6 +28,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
@@ -116,11 +117,14 @@ class LauncherActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        /* A start by an app, not a restore: remember the app, for Back (also when this instance
+         * closes at once below; the launcher that stays reads it). */
+        if (savedInstanceState == null) rememberOpener()
         /* One launcher per task. Started again while the app's task already exists (a frontend
-         * starting it by name, as ES-DE does), Android stacked a second launcher on the first, and
-         * leaving then took two presses of B (AerithMetiq, 2026-10-22; seen on the Nova as two
-         * LauncherActivity records in one task). This one closes, showing what was there: the
-         * launcher, or the game if it is running. */
+         * starting it by name, as ES-DE does), Android stacks a second launcher on the first, and
+         * leaving would take two presses of B (seen on the Nova with `am start -n`, 2026-10-22).
+         * This one closes, showing what was there: the launcher, or the game if it is running.
+         * The "double B" AerithMetiq reported had another cause: see [leave]. */
         if (!isTaskRoot) {
             finish()
             return
@@ -169,10 +173,45 @@ class LauncherActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         findViewById<MaterialButton>(R.id.sign_out).setOnClickListener { signOut() }
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = leave()
+        })
 
         render()
         if (store.load() != null) refreshProfile()
         else setStatus("Sign in with the Steam account that owns Alabaster Dawn.")
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        rememberOpener()
+    }
+
+    /** Keeps the package that started this launcher (see [ReturnTo.opener]); prefs, so a restart keeps it. */
+    private fun rememberOpener() {
+        val opener = ReturnTo.opener(referrer?.host, packageName, prefs.getString(KEY_OPENER, null))
+        prefs.edit().putString(KEY_OPENER, opener).apply()
+    }
+
+    /**
+     * Back leaves for the app that opened the launcher ([ReturnTo]): the home screen, or a frontend
+     * such as ES-DE, brought forward as its own icon would. Not the next task in Android's order,
+     * which after a switch through recents is some other app.
+     */
+    private fun leave() {
+        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val home = packageManager.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
+            ?.activityInfo?.packageName
+        val target = ReturnTo.target(prefs.getString(KEY_OPENER, null), packageName, home)
+        val intent = target?.let { packageManager.getLaunchIntentForPackage(it) }
+            ?: homeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        Log.i(TAG, "launcher: Back leaves for ${target ?: "the home screen"}")
+        try {
+            startActivity(intent)
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "launcher: could not open ${intent.`package` ?: intent.component}; moving to the back", e)
+            moveTaskToBack(true)
+        }
     }
 
     override fun onResume() {
@@ -842,5 +881,7 @@ class LauncherActivity : AppCompatActivity() {
         const val TAG = "AlabasterDawnBox"
         const val KEY_OFFLINE = "playOffline"
         const val KEY_SYNC_AFTER_GAME = "syncAfterGame"
+        /** The package that started the launcher, for Back ([ReturnTo]). */
+        const val KEY_OPENER = "opener"
     }
 }

@@ -205,6 +205,7 @@ app/src/main/java/io/github/aerithmetiq/alabasterdawnbox/
   SettingsActivity.kt     game settings, Steam Cloud saves and diagnostics entries, notices, about
   SteamProbeActivity.kt   read-only Steam diagnostics using the saved login
   Screens.kt              shared programmatic UI pieces for secondary screens
+  ReturnTo.kt             where Back leaves the launcher for: the app that opened it (unit-tested)
   QrCode.kt               QR dialog sizing (fits any aspect ratio) + bitmap
   GameFiles.kt            where the downloaded game lives (external app files/AlabasterDawn)
   steam/SteamSession.kt   one JavaSteam connection: connect, QR/password sign-in, logOn, profile
@@ -504,6 +505,13 @@ At 960x540 in a busy area the game ran at 58-59 fps: about one dropped frame a s
   `text_primary` / `text_secondary`, the serif "ALABASTER / DROID" wordmark.
 - **Controller-first:** every control focusable, with the white focus ring (`focus_ring`,
   `focus_ring_outline`); give each screen a sensible initial focus.
+- **Back leaves for the app that opened the launcher** (`ReturnTo`, 2026-10-22): the home screen, or a
+  frontend such as ES-DE (its launch intent), never the next task in Android's order. Android's Back
+  on a task's root moves the task back and shows the task under it, which after a switch through
+  recents is another app: with both Box apps open, B in one showed the other and leaving took a
+  second B (the "double B" AerithMetiq reported). The opener is `Activity.referrer`, kept in the
+  `launcher` preferences (`opener`); a start by the app itself keeps it. Checked on the Nova: icon,
+  home, the other app's icon, quick switch back, one B → home screen. Not yet tried from ES-DE.
 - Landscape-first, but nothing may clip on 4:3 handhelds or phones; size dialogs from
   `resources.configuration.screenWidthDp/screenHeightDp` (see `QrCode.fit`).
 - UI text is plain and direct; say what happened and what to do next.

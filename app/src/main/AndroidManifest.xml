@@ -13,6 +13,19 @@
     <!-- The game's controller rumble, felt (Settings → Game, on by default). -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Back leaves for the app that opened the launcher (ReturnTo): it must find the home screen app
+         and open a frontend such as ES-DE by its launch intent. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <!-- appCategory="game": tells Android this is a game, so a device's game mode and performance
          profile treat it as one. The game is limited by one busy thread that has to get a fast core. -->
     <application
