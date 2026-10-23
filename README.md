@@ -128,14 +128,6 @@ runs a copy you put on the device yourself, with no Steam sign-in; its screens i
 Brazilian Portuguese; home-screen shortcuts for each game; and a controller fix for the games' PC
 builds.
 
-### With CrossDroid
-
-[CrossDroid](https://github.com/dain98/CrossDroid) by dain98 is a Steam launcher for CrossCode. This
-app follows its launcher design (sign in to Steam, download the game, bring the save down before
-playing and up after); none of its code is used. CrossDroid is for CrossCode only, so its closer
-comparison is with CrossCodeBox; [CrossCodeBox's README](https://github.com/AerithMetiq/CrossCodeBox#with-crossdroid)
-has it.
-
 ## Performance
 
 Alabaster Dawn draws its lighting and fog on the GPU, and even 720p keeps a flagship handheld GPU busy.
