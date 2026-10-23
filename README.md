@@ -75,6 +75,67 @@ carries the support for them (the same code that unlocks CrossCode's achievement
 [CrossCodeBox](https://github.com/AerithMetiq/CrossCodeBox)), and it will be switched on in an update
 once Alabaster Dawn has achievements on Steam.
 
+## How it compares
+
+### With CrossCodeBox
+
+[CrossCodeBox](https://github.com/AerithMetiq/CrossCodeBox) is the same launcher for CrossCode, built
+from the same code; the two are kept in step (`PARITY.md` lists every feature in both). Everything
+above works the same in both, except:
+
+- **Only in CrossCodeBox:** Steam achievements that unlock (Alabaster Dawn has none yet, see
+  [Achievements](#achievements)); the DLC your account owns is downloaded with the game; mods
+  (CCLoader3 and a browser for the community's mod database); a touch option that fires L1/L2 only on
+  a fresh tap, for CrossCode's dash; a fix that spaces CrossCode's pixel font right.
+- **Only in AlabasterDawnBox:** the **Resolution** setting, and the shader fixes mobile GPUs need for
+  Alabaster Dawn's lighting and fog (CrossCode draws on a 2D canvas and needs neither).
+- **Different because the games differ:** vibration follows Alabaster Dawn's controller rumble, and
+  CrossCode's screen shakes. Touch controls step aside in Alabaster Dawn's cutscenes, and in
+  CrossCode's cutscenes, conversations and Direct Links. The touch stick's "always full tilt" is off
+  by default here (Alabaster Dawn moves by how far the stick is tilted) and on in CrossCodeBox
+  (CrossCode walks below 80 % tilt).
+
+### With alabaster-android
+
+[alabaster-android](https://github.com/moronigranja/alabaster-android) runs Alabaster Dawn and
+CrossCode in one app, from a copy of the game you copy to the device and pick with Android's file
+picker. AlabasterDawnBox's game host is its code (from commit `f1cedd5`, see `NOTICE.md`). On top of
+it, AlabasterDawnBox adds:
+
+- **Steam:** sign-in, the download from Steam with updates and verifying, Steam Cloud saves with
+  backups and restore, the playing status, and achievement support for when the game has them.
+- **A launcher:** controller-first, with the game's settings and the Resolution before it starts, and
+  Back returning to whatever opened the app.
+- **Changes to the game host:**
+  - On a device whose WebView is 32-bit (the Retroid Pocket Nova's), the game runs in the app's own
+    64-bit process. On the Nova this took the game from 45-55 fps to a steady 60 at 1080p, and
+    lifted the 32-bit memory ceiling the game ran into after a few minutes of play.
+  - Less work per frame and a faster start: the side menu's settings are read twice a second instead
+    of every frame, the controller's state is parsed only when it changes, `bundle.js` is edited as
+    bytes, and the files that need no edit are streamed.
+  - Frame-rate limits of 30, 45, 60, 90 and 120 (alabaster-android: 20, 30, 40, 45, 60), only those
+    the screen can show, with the screen's refresh rate picked to match. A limit the refresh rate
+    does not divide (45 on 60 Hz) averages out instead of dropping to the next one down.
+  - The side menu pauses the game and is driven by the controller; a held direction repeats.
+  - Back opens the side menu on Android 13, where it did nothing.
+  - The lighting, fog and combine shaders are also served at high precision: at medium precision
+    they band into horizontal streaks on Adreno GPUs.
+  - Touch controls: a switch that removes the whole overlay, a left side that mirrors the right, a
+    transparency slider, hiding in cutscenes, and vibration from the game's rumble.
+
+alabaster-android has things this app does not (at the time of writing): one app for both games; it
+runs a copy you put on the device yourself, with no Steam sign-in; its screens in Spanish and
+Brazilian Portuguese; home-screen shortcuts for each game; and a controller fix for the games' PC
+builds.
+
+### With CrossDroid
+
+[CrossDroid](https://github.com/dain98/CrossDroid) by dain98 is a Steam launcher for CrossCode. This
+app follows its launcher design (sign in to Steam, download the game, bring the save down before
+playing and up after); none of its code is used. CrossDroid is for CrossCode only, so its closer
+comparison is with CrossCodeBox; [CrossCodeBox's README](https://github.com/AerithMetiq/CrossCodeBox#with-crossdroid)
+has it.
+
 ## Performance
 
 Alabaster Dawn draws its lighting and fog on the GPU, and even 720p keeps a flagship handheld GPU busy.
