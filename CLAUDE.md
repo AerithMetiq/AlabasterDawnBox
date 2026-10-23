@@ -307,8 +307,11 @@ to differ, and say what changed in the file's header and in `NOTICE.md`.
   `applyRefreshRate` asks for the lowest refresh rate the cap divides evenly (`refreshFor`). The
   shim's gate keeps a running deadline, so 45 on 60 Hz averages 45 (three vsyncs of four) instead
   of upstream's drop to 30. The cap is read on the engine's poll, so a change made in the menu
-  lands when the game resumes. Unknown: whether the engine draws anything new above 60 fps (its
-  logic was measured upstream as a 60 Hz fixed step); 90/120 need a 90/120 Hz screen to check.
+  lands when the game resumes. Above 60 fps the engine does draw new frames (read in game 0.2.0-9's
+  `bundle.js`, 2026-10-22): `System.run` runs the game once per animation frame, and `Timer.step`
+  advances game time by the real time since the last frame, rounding it to 1/60 s only when it is
+  within -15 %/+30 % of that (14-22 ms). At 90 or 120 Hz the frame is 8-11 ms, so each one moves the
+  game on by its own time. Not measured on the device.
 - **Game settings are shared with the launcher** (`host/GameSettings.kt`, ours; written 2026-10-12,
   **not yet run on a device**). The keys live there; the launcher's Settings screen has a "Game"
   section that edits the same `ada` preferences file the side menu does. Two processes read that
@@ -421,8 +424,9 @@ At 960x540 in a busy area the game ran at 58-59 fps: about one dropped frame a s
     rung (about 30 % fewer pixels than 1080p) or a narrower precision raise; AerithMetiq chose to
     play at 1280x720 instead, so neither was built.
   - Not changed, on purpose: the frame-rate cap with the switch off still asks for the screen's
-    fastest mode (120 Hz on the Nova when the system allows it). Whether the engine draws anything
-    new above 60 fps is still unknown; if it does not, capping at 60 would halve GPU work for free.
+    fastest mode (120 Hz on the Nova when the system allows it). The engine draws a new frame for
+    each (see Frame-rate caps), so capping at 60 trades smoothness for heat and battery; it is not
+    free. Left to the player.
 - **Do not test by suspending the game's AudioContext**: with audio suspended the frame rate fell to
   47-50 fps, so the engine's pacing depends on the running audio clock and the comparison is void.
   The WebAudio thread (`AudioOutputDevice`) itself uses 40-45 % of a core.
