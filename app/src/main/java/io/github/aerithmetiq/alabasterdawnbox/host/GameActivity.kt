@@ -91,7 +91,12 @@ class GameActivity : Activity() {
     private var refreshRates: List<Int> = emptyList()
     private var fpsChoices: List<Int> = FpsLimit.CHOICES
     /** The direction a stick or hat is held in while the menu is open, as a D-pad key code, or 0. */
+    private var menuStickDirection = 0
+    /** The D-pad key held down while the menu is open, or 0 (controllers that send the D-pad as keys). */
+    private var menuKeyDirection = 0
+    /** The direction the menu is acting on and repeating ([holdMenuDirection]), or 0. */
     private var menuHeldDirection = 0
+    private val menuRepeater = Handler(Looper.getMainLooper())
     private var fsBridge: FsBridge? = null
     private var saveStore: SaveStore? = null
     private var padLayoutStore: PadLayoutStore? = null
@@ -790,7 +795,7 @@ class GameActivity : Activity() {
         menu.open()
         /* AlabasterDawnBox: the game is paused while the menu is open (the engine stops its loop and
          * its audio on the page's blur), and the controller drives the menu instead (see [menuKey]). */
-        menuHeldDirection = 0
+        releaseMenuDirections()
         engineActive = false
         setPageFocus(false)
     }
@@ -802,6 +807,7 @@ class GameActivity : Activity() {
      */
     private fun closeMenu() {
         menuView?.close()
+        releaseMenuDirections()
         webView?.requestFocus()
         setPageFocus(true)
         engineActive = true
@@ -821,7 +827,15 @@ class GameActivity : Activity() {
         }
         return when (code) {
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
-            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                /* AlabasterDawnBox: a held direction repeats at the menu's own pace ([holdMenuDirection]), so
+                 * the system's key repeats are left out. */
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) menuKeyDirection = code
+                else if (event.action == KeyEvent.ACTION_UP && menuKeyDirection == code) menuKeyDirection = 0
+                holdMenuDirection()
+                true
+            }
+            KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER,
             KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
                 if (event.action == KeyEvent.ACTION_DOWN) menu.padKey(code)
                 true
@@ -830,7 +844,7 @@ class GameActivity : Activity() {
         }
     }
 
-    /** A stick or hat while the menu is open: pushing it in a direction is one press of that way. */
+    /** A stick or hat while the menu is open: held in a direction, it acts as that D-pad key held. */
     private fun menuMotion(event: MotionEvent) {
         val menu = menuView?.takeIf { it.isOpen } ?: return
         fun axis(a: Int, b: Int): Float {
@@ -847,10 +861,40 @@ class GameActivity : Activity() {
             x >= MENU_STICK -> KeyEvent.KEYCODE_DPAD_RIGHT
             else -> 0
         }
-        if (direction != menuHeldDirection) {
-            menuHeldDirection = direction
-            if (direction != 0) menu.padKey(direction)
+        menuStickDirection = direction
+        holdMenuDirection()
+    }
+
+    /**
+     * AlabasterDawnBox: a direction held on the D-pad or a stick moves the menu once, then again after
+     * [MENU_REPEAT_DELAY_MS] and every [MENU_REPEAT_MS] until it is let go, so a long list needs no
+     * repeated presses. A held key wins over the stick. Called whenever either changes.
+     */
+    private fun holdMenuDirection() {
+        val direction = if (menuKeyDirection != 0) menuKeyDirection else menuStickDirection
+        if (direction == menuHeldDirection) return
+        menuHeldDirection = direction
+        menuRepeater.removeCallbacks(menuRepeat)
+        val menu = menuView?.takeIf { it.isOpen } ?: return
+        if (direction == 0) return
+        menu.padKey(direction)
+        menuRepeater.postDelayed(menuRepeat, MENU_REPEAT_DELAY_MS)
+    }
+
+    private val menuRepeat = object : Runnable {
+        override fun run() {
+            val menu = menuView?.takeIf { it.isOpen } ?: return
+            if (menuHeldDirection == 0) return
+            menu.padKey(menuHeldDirection)
+            menuRepeater.postDelayed(this, MENU_REPEAT_MS)
         }
+    }
+
+    /** Forgets every held direction and stops the repeat: the menu opened or closed, or the app paused. */
+    private fun releaseMenuDirections() {
+        menuStickDirection = 0
+        menuKeyDirection = 0
+        holdMenuDirection()
     }
 
     /**
@@ -1073,6 +1117,8 @@ class GameActivity : Activity() {
 
     override fun onPause() {
         engineActive = false
+        /* AlabasterDawnBox: a key let go while paused never arrives; the menu must not keep repeating. */
+        releaseMenuDirections()
         /* An edit in progress is saved when the app goes to the background, so it is not lost if
          * the process is killed. */
         padView?.commitIfEditing()
@@ -1237,6 +1283,9 @@ class GameActivity : Activity() {
 
         /** How far a stick must be pushed to count as a direction in the menu. */
         private const val MENU_STICK = 0.6f
+        /** A held direction in the menu: the wait before it repeats, then the time between repeats. */
+        private const val MENU_REPEAT_DELAY_MS = 400L
+        private const val MENU_REPEAT_MS = 120L
         private const val REQ_GAME = 101
         private const val REQ_SAVES = 102
         private const val BRIDGE_NAME = "PortBridge"

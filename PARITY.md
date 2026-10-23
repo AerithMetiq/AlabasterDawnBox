@@ -26,6 +26,7 @@ Dawn's `terra` engine) cannot be copied as they are: each needs its own look at 
 | Mod loader and mod browser | none exists for the game yet | CCLoader3, off by default; mod browser (CCModDB), add a file, remove; community mods loaded on the Nova |
 | Launcher: B leaves on the first press | yes | yes |
 | Back returns to the app that opened the launcher (`ReturnTo`) | yes, checked | yes, checked |
+| Side menu: a held direction repeats (`holdMenuDirection`) | yes, not yet tried | yes, not yet tried |
 | Launcher logo cut to its own columns | n/a (the game ships a title-name image) | yes |
 | Black page background behind the picture | already black | yes (style.css paints #080808) |
 | Verify leaves `<web root>/mods/` alone (`GameDownload.KEPT`) | yes (unused) | yes, checked |
