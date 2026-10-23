@@ -281,7 +281,7 @@ to differ, and say what changed in the file's header and in `NOTICE.md`.
   `SideMenuView`'s own: `GameActivity.menuKey` / `menuMotion` hand it D-pad, stick, A and B
   (`padKey`); B acts on release so the game does not resume with B held. A held direction (D-pad
   key, hat or stick) moves once, then repeats after 400 ms every 120 ms until let go
-  (`holdMenuDirection`, 2026-10-22; the system's own key repeats are dropped).
+  (`holdMenuDirection`, 2026-10-22; the system's own key repeats are dropped). AerithMetiq: "feels nice".
 - **Frame-rate caps are 30/45/60/90/120** (`FpsLimit`, changed from upstream's 20/30/40/45/60). The
   menu only offers the rates the screen can show (`choicesFor`), and
   `applyRefreshRate` asks for the lowest refresh rate the cap divides evenly (`refreshFor`). The
