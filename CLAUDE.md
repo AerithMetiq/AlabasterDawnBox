@@ -250,6 +250,9 @@ only one app has). Run it after a change; carry the change over, or run `--accep
 repositories' lock) and replace the TODO reason. It needs both repositories checked out side by side,
 so it is not part of CI.
 
+**CI** (`.github/workflows/tests.yml`, 2026-10-22): unit tests and a debug build on every push and pull
+request (JDK 21 on ubuntu-latest). Not yet run: it starts with the first push after it.
+
 Keep pure logic (parsing, sizing, decisions) in small Android-free functions with unit tests. Code that
 needs a device or Steam must be described to AerithMetiq as untested until they run it.
 
